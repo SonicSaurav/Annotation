@@ -434,3 +434,23 @@ You are a strict, no-nonsense critic whose primary responsibility is to rigorous
 2025-03-17 00:01:36 - get_together_completion called with kwargs: {'include_thinking': True}
 2025-03-17 00:01:36 - get_together_completion returned: None
 
+2025-03-17 00:41:19 - read_prompt_template called with args truncated, kwargs: {}
+2025-03-17 00:41:19 - read_prompt_template returned: You are a highly sophisticated persona generator. Your goal is to create ultra-realistic personas that perfectly mimic real-world hotel bookers. Based on the input number (1-10), you will generate a s...
+
+2025-03-17 00:41:19 - get_openai_completion called with kwargs: {}
+2025-03-17 00:41:19 - get_openai_completion returned: Name: Marcus Li, 42, originally from San Francisco  
+Travel Purpose: Emergency/displaced stay following the sudden devastation caused by a series of wildfires  
+Group Size: Traveling with his 14-year-...
+
+2025-03-17 00:44:45 - read_prompt_template called with args truncated, kwargs: {}
+2025-03-17 00:44:45 - read_prompt_template returned: You are a highly sophisticated persona generator. Your goal is to create ultra-realistic personas that perfectly mimic real-world hotel bookers. Based on the input number (1-10), you will generate a s...
+
+2025-03-17 00:44:45 - get_openai_completion called with kwargs: {}
+2025-03-17 00:44:45 - get_openai_completion returned: Marcus Riley, 31, a Chicago native and marketing executive, is gearing up for an electrifying weekend in Los Angeles to catch the national basketball finals with three of his closest college friends. ...
+
+2025-03-17 00:46:24 - read_prompt_template called with args truncated, kwargs: {}
+2025-03-17 00:46:24 - read_prompt_template returned: You are a highly sophisticated persona generator. Your goal is to create ultra-realistic personas that perfectly mimic real-world hotel bookers. Based on the input number (1-10), you will generate a s...
+
+2025-03-17 00:46:24 - get_openai_completion called with kwargs: {}
+2025-03-17 00:46:24 - get_openai_completion returned: Amina Al-Fayed, 45, is a dedicated and reflective traveler from Amman, Jordan, setting out on a religious pilgrimage retreat to Jerusalem—a journey that holds both deep personal meaning and community ...
+

@@ -12,19 +12,24 @@ import together
 from openai import OpenAI
 from anthropic import Anthropic
 import groq
+from datetime import timedelta
+import traceback
 
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_PERMANENT'] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
 
 # Use threading mode which is more compatible
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*", logger=True)
 
-# Configure Celery AFTER socketio is initialized
-app.config['CELERY_BROKER_URL'] = 'redis://localhost:6379/0'
-app.config['CELERY_RESULT_BACKEND'] = 'redis://localhost:6379/0'
-celery = Celery(app.name, broker=app.config['CELERY_BROKER_URL'])
+app.config['broker_url'] = 'redis://localhost:6379/0'
+app.config['result_backend'] = 'redis://localhost:6379/0'
+celery = Celery(app.name, broker=app.config['broker_url'])
 celery.conf.update(app.config)
+celery.conf.result_expires = 3600
 
 # Ensure logs directory exists
 os.makedirs("logs", exist_ok=True)
@@ -122,7 +127,7 @@ def extract_thinking(response):
 
 def extract_function_calls(response):
     """
-    Extract <function> search_func(...) </function> calls.
+    Extract <function> search_func(...) </function> calls with improved error handling.
     Returns:
       - 'cleaned' user-facing response (with those calls removed)
       - a list of the function call body strings
@@ -131,35 +136,42 @@ def extract_function_calls(response):
         log_error(f"Invalid response passed to extract_function_calls: {type(response)}")
         return "", []
         
-    # Pattern to match various formats of function calls - try in order and stop after first match
-    patterns = [
-        r'<function>\s*search_func\((.*?)\)\s*</function>',  # Standard format
-        r'<function>search_func\((.*?)\)</function>',        # No spaces
-        r'<function>\s*search_func\s*\((.*?)\)\s*</function>' # Extra spaces
-    ]
+    try:
+        # Pattern to match various formats of function calls - try in order and stop after first match
+        patterns = [
+            r'<function>\s*search_func\((.*?)\)\s*</function>',  # Standard format
+            r'<function>search_func\((.*?)\)</function>',        # No spaces
+            r'<function>\s*search_func\s*\((.*?)\)\s*</function>', # Extra spaces
+            r'<function>(.*?)</function>'  # More lenient - any content in function tags
+        ]
+        
+        function_calls = []
+        clean_response = response
+        
+        # Try each pattern until we find a match
+        for pattern in patterns:
+            calls = re.findall(pattern, response, flags=re.DOTALL)
+            if calls:
+                function_calls = calls  # Use only the matches from this pattern
+                clean_response = re.sub(pattern, '', response, flags=re.DOTALL)
+                log_debug(f"Extract function calls - Found pattern match: {pattern}")
+                break  # Stop after finding first matching pattern
+        
+        log_debug(f"Extract function calls - Input length: {len(response)}")
+        log_debug(f"Extract function calls - Found {len(function_calls)} function calls")
+        
+        clean_response = clean_response.strip()
+        
+        # Sanity check - if we removed everything, something might be wrong
+        if not clean_response and function_calls:
+            log_debug("Warning: After removing function calls, response is empty")
+        
+        return clean_response, function_calls
     
-    function_calls = []
-    clean_response = response
-    
-    # Try each pattern until we find a match
-    for pattern in patterns:
-        calls = re.findall(pattern, response, flags=re.DOTALL)
-        if calls:
-            function_calls = calls  # Use only the matches from this pattern
-            clean_response = re.sub(pattern, '', response, flags=re.DOTALL)
-            log_debug(f"Extract function calls - Found pattern match: {pattern}")
-            break  # Stop after finding first matching pattern
-    
-    log_debug(f"Extract function calls - Input length: {len(response)}")
-    log_debug(f"Extract function calls - Found {len(function_calls)} function calls")
-    
-    clean_response = clean_response.strip()
-    
-    # Sanity check - if we removed everything, something might be wrong
-    if not clean_response and function_calls:
-        log_debug("Warning: After removing function calls, response is empty")
-    
-    return clean_response, function_calls
+    except Exception as e:
+        log_error(f"Unexpected error in extract_function_calls: {str(e)}")
+        return response, []  # Return original response in case of error
+
 
 def create_detailed_message(thinking, response_after_thinking, final_response, search_history=None, critique=None):
     """Create detailed assistant message with optimized structure"""
@@ -268,8 +280,9 @@ def get_groq_client():
 
 @celery.task(bind=True)
 def get_openai_completion_task(self, prompt, model="o3-mini", conversation_id=None):
-    """Celery task for OpenAI completion"""
+    """Celery task for OpenAI completion with file-based storage"""
     result = get_openai_completion(prompt, model)
+    
     if conversation_id:
         # Emit the result via socketio
         socketio.emit('model_response', {
@@ -277,8 +290,39 @@ def get_openai_completion_task(self, prompt, model="o3-mini", conversation_id=No
             'conversation_id': conversation_id,
             'response': result
         })
-        # Add a debug log to confirm event emission
+        
+        # For persona generation (step 1), store result in both session and file
+        if 'persona.txt' in prompt and result:
+            # Store in session
+            try:
+                session_data = session.get('data', {})
+                session_data['persona'] = result
+                session_data['conversation_id'] = conversation_id
+                session['data'] = session_data
+            except Exception as e:
+                log_error(f"Error storing persona in session: {str(e)}")
+            
+            # Also store in file for reliable retrieval
+            save_conversation_data(conversation_id, "persona", result)
+            log_debug(f"Stored persona in file for conversation {conversation_id}")
+        
+        # For requirements, store both in session and file
+        if 'requirement.txt' in prompt and result:
+            # Store in session
+            try:
+                session_data = session.get('data', {})
+                session_data['requirements'] = result
+                session['data'] = session_data
+            except Exception as e:
+                log_error(f"Error storing requirements in session: {str(e)}")
+            
+            # Also store in file
+            save_conversation_data(conversation_id, "requirements", result)
+            log_debug(f"Stored requirements in file for conversation {conversation_id}")
+        
+        # Log event emission
         log_debug(f"Emitted model_response event for {model} with conversation_id {conversation_id}")
+    
     return result
 
 @log_function_call
@@ -369,26 +413,6 @@ def get_claude_completion_task(self, prompt, include_thinking=False, conversatio
         })
     return result
 
-
-# Add an endpoint to directly retrieve task results
-@app.route('/get_task_result/<task_id>', methods=['GET'])
-def get_task_result(task_id):
-    """Get the direct result of a Celery task"""
-    task = celery.AsyncResult(task_id)
-    
-    if task.state == 'SUCCESS':
-        result = task.result
-        return jsonify({
-            'status': 'success',
-            'result': result
-        })
-    else:
-        return jsonify({
-            'status': 'error',
-            'message': f'Task is in state {task.state}',
-            'state': task.state
-        })
-    
 @log_function_call
 def get_claude_completion(prompt, include_thinking=False):
     """
@@ -471,25 +495,66 @@ def get_groq_completion(prompt, include_thinking=False):
 
 @celery.task(bind=True)
 def extract_ner_from_conversation_task(self, conversation_history, conversation_id):
-    """Celery task for NER extraction"""
-    result = extract_ner_from_conversation(conversation_history)
-    socketio.emit('ner_extracted', {
-        'conversation_id': conversation_id,
-        'preferences': result
-    })
-    return result
+    """Celery task for NER extraction with improved error handling"""
+    try:
+        result = extract_ner_from_conversation(conversation_history)
+        socketio.emit('ner_extracted', {
+            'conversation_id': conversation_id,
+            'preferences': result
+        })
+        # Save NER results to file for reliable retrieval
+        save_conversation_data(conversation_id, "ner_results", result)
+        return result
+    except Exception as e:
+        error_msg = f"Error in NER extraction task: {str(e)}\n{traceback.format_exc()}"
+        log_error(error_msg)
+        socketio.emit('log_message', {'type': 'error', 'message': error_msg})
+        return {"error": str(e)}
 
 def extract_ner_from_conversation(conversation_history):
     """
     Extract named entities (hotel preferences) from conversation using NER prompt.
-    Returns a dictionary of extracted preferences.
+    Improved to handle different conversation formats.
     """
     try:
         # Create simple conversation history without thinking for passing to LLMs
-        simple_conversation = [
-            {"role": msg["role"], "content": msg["content"]} 
-            for msg in conversation_history
-        ]
+        simple_conversation = []
+        
+        if not conversation_history:
+            log_error("extract_ner_from_conversation: Empty conversation history")
+            return {}
+            
+        # Handle different conversation formats
+        for msg in conversation_history:
+            if isinstance(msg, dict):
+                if "role" in msg and "content" in msg:
+                    # Standard format
+                    simple_conversation.append({
+                        "role": msg["role"],
+                        "content": msg["content"]
+                    })
+                elif "role" in msg and isinstance(msg.get("content"), dict):
+                    # Handle nested content structure
+                    content = msg.get("content", {})
+                    if isinstance(content, dict) and "text" in content:
+                        simple_conversation.append({
+                            "role": msg["role"],
+                            "content": content["text"]
+                        })
+            elif isinstance(msg, str):
+                # String format - assume user message
+                simple_conversation.append({
+                    "role": "user",
+                    "content": msg
+                })
+                
+        if not simple_conversation:
+            log_error("extract_ner_from_conversation: Failed to parse conversation")
+            # Log the conversation structure to help debug
+            log_debug(f"Conversation structure: {type(conversation_history)}")
+            if isinstance(conversation_history, list) and len(conversation_history) > 0:
+                log_debug(f"First message type: {type(conversation_history[0])}")
+            return {}
         
         # Add debug - log conversation length
         log_debug(f"NER extraction - processing conversation with {len(simple_conversation)} messages")
@@ -520,12 +585,25 @@ def extract_ner_from_conversation(conversation_history):
         if dict_match:
             try:
                 # Parse the extracted dictionary string
-                preferences_dict = eval(dict_match.group(1))
+                dict_str = dict_match.group(1)
+                # Replace any None with "None" for safer eval
+                dict_str = dict_str.replace(": None", ': "None"')
+                preferences_dict = eval(dict_str)
                 log_debug(f"Extracted preferences: {json.dumps(preferences_dict, ensure_ascii=False)}")
                 return preferences_dict
             except Exception as e:
                 log_error(f"Error parsing extracted preferences: {str(e)}")
-                return {}
+                # Try a more lenient approach on failure
+                try:
+                    # Remove any problematic characters and try again
+                    dict_str = dict_match.group(1)
+                    dict_str = re.sub(r',\s*}', '}', dict_str)  # Remove trailing commas
+                    preferences_dict = eval(dict_str)
+                    log_debug(f"Extracted preferences (second attempt): {json.dumps(preferences_dict, ensure_ascii=False)}")
+                    return preferences_dict
+                except Exception as e2:
+                    log_error(f"Error in second attempt parsing preferences: {str(e2)}")
+                    return {}
         else:
             # Try direct extraction if no code block is found
             try:
@@ -533,7 +611,10 @@ def extract_ner_from_conversation(conversation_history):
                 dict_pattern = r'({[\s\S]*?})'
                 dict_match = re.search(dict_pattern, ner_response)
                 if dict_match:
-                    preferences_dict = eval(dict_match.group(1))
+                    dict_str = dict_match.group(1)
+                    # Replace any None with "None" for safer eval
+                    dict_str = dict_str.replace(": None", ': "None"')
+                    preferences_dict = eval(dict_str)
                     log_debug(f"Extracted preferences (direct): {json.dumps(preferences_dict, ensure_ascii=False)}")
                     return preferences_dict
                 else:
@@ -543,29 +624,42 @@ def extract_ner_from_conversation(conversation_history):
                 log_error(f"Error with direct parsing: {str(e)}")
                 return {}
     except Exception as e:
-        error_msg = f"Error in NER extraction: {str(e)}"
+        error_msg = f"Error in NER extraction: {str(e)}\n{traceback.format_exc()}"
         log_error(error_msg)
         return {}
 
 @celery.task(bind=True)
 def process_search_call_task(self, extracted_preferences, conversation_id):
-    """Celery task for search call processing"""
-    result = process_search_call(extracted_preferences)
-    socketio.emit('search_call_processed', {
-        'conversation_id': conversation_id,
-        'search_call': result
-    })
-    return result
+    """Celery task for search call processing with improved error handling"""
+    try:
+        result = process_search_call(extracted_preferences)
+        socketio.emit('search_call_processed', {
+            'conversation_id': conversation_id,
+            'search_call': result
+        })
+        # Save search call to file for reliable retrieval
+        save_conversation_data(conversation_id, "search_call", result)
+        return result
+    except Exception as e:
+        error_msg = f"Error in search call task: {str(e)}\n{traceback.format_exc()}"
+        log_error(error_msg)
+        socketio.emit('log_message', {'type': 'error', 'message': error_msg})
+        return ""
 
 def process_search_call(extracted_preferences):
     """
     Determine if a search should be triggered based on extracted preferences.
-    Returns a string with the search function call or nothing.
+    Improved to handle different preference formats and better error reporting.
     """
     try:
         # Add debug for empty preferences check
         if not extracted_preferences:
-            log_debug("Process search call - preferences empty, search might still be needed")
+            log_debug("Process search call - preferences empty, still checking search need")
+            
+        # Ensure preferences is a valid dictionary
+        if not isinstance(extracted_preferences, dict):
+            log_error(f"Invalid preferences format: {type(extracted_preferences)}")
+            extracted_preferences = {}
             
         # Read search call prompt template
         search_call_template = read_prompt_template("search_call.md")
@@ -573,11 +667,14 @@ def process_search_call(extracted_preferences):
             log_error("Failed to read search_call.md template")
             return ""
             
-        # Prepare search call prompt
-        search_call_prompt = search_call_template.replace(
-            "{preferences}", 
-            json.dumps(extracted_preferences, ensure_ascii=False, indent=2)
-        )
+        # Prepare search call prompt with safer JSON handling
+        try:
+            preferences_json = json.dumps(extracted_preferences, ensure_ascii=False, indent=2)
+        except Exception as e:
+            log_error(f"Error converting preferences to JSON: {str(e)}")
+            preferences_json = "{}"
+            
+        search_call_prompt = search_call_template.replace("{preferences}", preferences_json)
         
         # Get search call decision using OpenAI
         search_call_response = get_openai_completion(search_call_prompt, model="o3-mini")
@@ -592,6 +689,11 @@ def process_search_call(extracted_preferences):
         # Clean and return the response
         search_call_response = search_call_response.strip()
         
+        # Check if the response is NO_SEARCH_NEEDED
+        if "NO_SEARCH_NEEDED" in search_call_response:
+            log_debug("Search call explicitly indicates no search needed")
+            return ""
+            
         # Only return if it's a search function call
         if "<function>" in search_call_response:
             log_debug("Search function call detected in search_call response")
@@ -601,7 +703,7 @@ def process_search_call(extracted_preferences):
         log_debug("No function call found in search call response")
         return ""
     except Exception as e:
-        error_msg = f"Error in search call processing: {str(e)}"
+        error_msg = f"Error in search call processing: {str(e)}\n{traceback.format_exc()}"
         log_error(error_msg)
         return ""
 
@@ -804,8 +906,8 @@ def process_model_response(model_type, conversation, ENABLE_SEARCH, EVALUATE_RES
         
         log_debug(f"{model_type}: Preferences changed: {preferences_changed}")
         log_debug(f"{model_type}: Previous search had many results (> 10): {many_previous_results}")
-        log_debug(f"{model_type}: Previous search matches: {previous_data.get('num_matches', 100)}")  # Use get() with default
-        log_debug(f"{model_type}: Previous preferences: {json.dumps(previous_data.get('preferences', {}), ensure_ascii=False)}")  # Use get() with default
+        log_debug(f"{model_type}: Previous search matches: {previous_data.get('num_matches', 100)}")
+        log_debug(f"{model_type}: Previous preferences: {json.dumps(previous_data.get('preferences', {}), ensure_ascii=False)}")
         log_debug(f"{model_type}: New preferences: {json.dumps(extracted_preferences, ensure_ascii=False)}")
     
         # --- STEP 2: Determine if search should be triggered ---
@@ -883,7 +985,7 @@ def process_model_response(model_type, conversation, ENABLE_SEARCH, EVALUATE_RES
     
     if search_record:
         # Show search results to actor when number of matches < 50
-        if search_record.get("num_matches", 100) < 50:  # Use get() with default
+        if search_record.get("num_matches", 100) < 50:
             show_results_to_actor = True
             search_text = search_record.get("results", "")
             log_debug(f"{model_type}: Search results will be shown to actor ({search_record.get('num_matches', 100)} matches < 50)")
@@ -895,10 +997,10 @@ def process_model_response(model_type, conversation, ENABLE_SEARCH, EVALUATE_RES
         search_record["show_results_to_actor"] = show_results_to_actor
         
         # Update num_matches from search_record for consistency
-        num_matches = search_record.get("num_matches", 100)  # Use get() with default
+        num_matches = search_record.get("num_matches", 100)
     else:
         # If we didn't run a search this time, use the previous number of matches
-        num_matches = previous_data.get("num_matches", 100)  # Use get() with default
+        num_matches = previous_data.get("num_matches", 100)
         log_debug(f"{model_type}: Using previous num_matches: {num_matches} (no new search)")
     
     # --- STEP 5: Generate assistant response ---
@@ -909,12 +1011,11 @@ def process_model_response(model_type, conversation, ENABLE_SEARCH, EVALUATE_RES
         return None
     
     # Prepare actor prompt - include num_matches only if search results exist
-    # Pass empty string instead of "0" when no search results
     agent_prompt = (
         agent_template
         .replace("{conv}", json.dumps(simple_conversation, ensure_ascii=False, indent=2))
         .replace("{search}", search_text if show_results_to_actor else "")
-        .replace("{num_matches}", str(num_matches) if show_results_to_actor else "")  # Only pass num_matches when showing results
+        .replace("{num_matches}", str(num_matches) if show_results_to_actor else "")
     )
     
     # Get assistant response based on model type
@@ -942,45 +1043,37 @@ def process_model_response(model_type, conversation, ENABLE_SEARCH, EVALUATE_RES
     # --- STEP 6: Evaluate the response with critics if enabled ---
     critique = None
     if EVALUATE_RESPONSES:
-        # Read original prompt for critic
         original_prompt = read_prompt_template("actor.md")
         if original_prompt:
-            # Remove the placeholders from original prompt
             original_prompt = original_prompt.replace("{conv}", "").replace("{search}", "").replace("{num_matches}", "").strip()
             
             try:
-                # Use the combined critique function that gets evaluations
                 critique = get_combined_critique(
                     original_prompt,
                     simple_conversation,
-                    search_record,  # Pass search record to critic - now includes show_results_to_actor flag and num_matches
+                    search_record,
                     final_response
                 )
                 
                 if critique:
-                    # Log the critique scores if available
                     together_score = critique.get("together", {}).get("score", "N/A") if critique.get("together") else "N/A"
                     log_debug(f"{model_type}: Together critique score: {together_score}")
             except Exception as e:
                 log_error(f"Error in critique evaluation: {str(e)}")
                 critique = None
     
-    # Create the assistant message for the conversation log
     assistant_msg = create_detailed_message(
         thinking,
         response_after_thinking,
         final_response,
-        search_record,  # Include search record in message for logging
-        critique  # Include critique in message for logging
+        search_record,
+        critique
     )
     
-    # Add the response to the conversation
     conversation.append(assistant_msg)
     
-    # Log the final processed response
     log_debug(f"Assistant ({model_type}): {final_response[:100]}...")
     
-    # Return both the assistant message and the data for the next iteration
     return {
         "message": assistant_msg,
         "data": {
@@ -997,28 +1090,22 @@ def debug_search_status(model_type, ENABLE_SEARCH, previous_data):
         log_debug(f"{model_type}: SEARCH DISABLED globally")
         return
     
-    # Check if we have previous data
     if previous_data is None:
         log_debug(f"{model_type}: No previous data exists - search will happen on first run")
         return
     
-    # Check previous results
     num_matches = previous_data.get("num_matches", 100)
     log_debug(f"{model_type}: Current num_matches: {num_matches}")
     
-    # Check if preferences exist
     preferences = previous_data.get("preferences", {})
     
-    # Check if search will be triggered
     if num_matches <= 10:
         log_debug(f"{model_type}: Search MAY TRIGGER on next turn if preferences change (num_matches <= 10)")
     else:
         log_debug(f"{model_type}: SEARCH WILL NOT TRIGGER on next turn (num_matches > 10)")
         
-    # Log current preferences
     log_debug(f"{model_type}: Current preferences: {json.dumps(preferences, ensure_ascii=False)}")
 
-# Flask routes and API endpoints
 @app.route('/')
 def index():
     """Main application page"""
@@ -1028,11 +1115,7 @@ def index():
 def init_conversation():
     """Initialize a new conversation"""
     conversation_id = str(uuid.uuid4())
-    
-    # Generate random number for persona prompt
     random_number = random.randint(1, 100)
-    
-    # Initialize session data
     session_data = {
         'conversation_id': conversation_id,
         'random_number': random_number,
@@ -1041,17 +1124,13 @@ def init_conversation():
         'requirements': None,
         'previous_data': {
             'preferences': {},
-            'num_matches': 100  # Default high number to ensure first search happens
+            'num_matches': 100
         },
         'saved_conversations': []
     }
-    
-    # Store in session
     session['data'] = session_data
     
-    # Generate persona task
     persona_template = read_prompt_template("persona.txt")
-    # Replace {number} placeholder with the random number
     persona_template = re.sub(r'\{number\}', str(random_number), persona_template)
     
     task = get_openai_completion_task.delay(persona_template, model="o3-mini", conversation_id=conversation_id)
@@ -1069,12 +1148,10 @@ def generate_requirements():
     persona = data.get('persona')
     conversation_id = data.get('conversation_id')
     
-    # Update session
     session_data = session.get('data', {})
     session_data['persona'] = persona
     session['data'] = session_data
     
-    # Generate requirements using OpenAI with o3-mini
     requirements_template = read_prompt_template("requirement.txt")
     requirements_prompt = requirements_template.replace("{persona}", persona)
     
@@ -1096,16 +1173,14 @@ def initial_user_message():
     requirements = data.get('requirements')
     conversation_id = data.get('conversation_id')
     
-    # Update session
     session_data = session.get('data', {})
     session_data['requirements'] = requirements
     session['data'] = session_data
     
-    # Generate first user message
     user_sim_template = read_prompt_template("user_simulator.txt")
     initial_user_prompt = (
         user_sim_template
-        .replace("{conv}", "[]")  # Empty conversation history for first message
+        .replace("{conv}", "[]")
         .replace("{requirements}", requirements)
         .replace("{persona}", session_data['persona'])
     )
@@ -1129,7 +1204,21 @@ def add_user_message():
     conversation_id = data.get('conversation_id')
     
     # Update session with new user message
-    session_data = session.get('data', {})
+    try:
+        session_data = session.get('data', {})
+    except Exception as e:
+        # If session can't be retrieved, try to get from file
+        log_error(f"Error getting session data: {str(e)}")
+        session_data = {
+            'conversation_id': conversation_id,
+            'conversation': [],
+            'previous_data': {
+                'preferences': {},
+                'num_matches': 100
+            },
+            'saved_conversations': []
+        }
+    
     conversation = session_data.get('conversation', [])
     
     # Add user message
@@ -1138,7 +1227,13 @@ def add_user_message():
     
     # Update session
     session_data['conversation'] = conversation
-    session['data'] = session_data
+    try:
+        session['data'] = session_data
+    except Exception as e:
+        log_error(f"Error updating session: {str(e)}")
+    
+    # Also save to file for backup
+    save_conversation_data(conversation_id, "conversation", conversation)
     
     return jsonify({
         'status': 'success',
@@ -1151,7 +1246,6 @@ def process_model_response_route():
     data = request.get_json()
     conversation_id = data.get('conversation_id')
     
-    # Get session data
     session_data = session.get('data', {})
     conversation = session_data.get('conversation', [])
     previous_data = session_data.get('previous_data', {
@@ -1159,12 +1253,11 @@ def process_model_response_route():
         'num_matches': 100
     })
     
-    # Launch task for model response
     task = process_model_response_task.delay(
-        'claude',  # Default to Claude for now
+        'claude',
         conversation,
-        True,  # ENABLE_SEARCH
-        True,  # EVALUATE_RESPONSES
+        True,
+        True,
         previous_data,
         conversation_id
     )
@@ -1180,19 +1273,16 @@ def generate_next_user_message():
     data = request.get_json()
     conversation_id = data.get('conversation_id')
     
-    # Get session data
     session_data = session.get('data', {})
     conversation = session_data.get('conversation', [])
     requirements = session_data.get('requirements')
     persona = session_data.get('persona')
     
-    # Create simple conversation
     simple_conversation = [
         {"role": msg["role"], "content": msg["content"]} 
         for msg in conversation
     ]
     
-    # Generate user message
     user_sim_template = read_prompt_template("user_simulator.txt")
     user_prompt = (
         user_sim_template
@@ -1212,11 +1302,58 @@ def generate_next_user_message():
         'task_id': task.id
     })
 
+@app.route('/debug_conversation', methods=['GET'])
+def debug_conversation():
+    """Debug endpoint to check conversation data"""
+    conversation_id = request.args.get('conversation_id')
+    
+    # Get data from all possible sources
+    response_data = {
+        'session': None,
+        'file': None,
+        'memory': None
+    }
+    
+    # Check session
+    try:
+        session_data = session.get('data', {})
+        if session_data and 'conversation' in session_data:
+            response_data['session'] = {
+                'conversation_length': len(session_data['conversation']),
+                'has_conversation': len(session_data['conversation']) > 0,
+                'conversation_preview': [
+                    {'role': msg.get('role'), 'content_preview': msg.get('content', '')[:50] + '...' if len(msg.get('content', '')) > 50 else msg.get('content', '')}
+                    for msg in session_data['conversation'][:2]
+                ] if session_data['conversation'] else []
+            }
+    except Exception as e:
+        response_data['session_error'] = str(e)
+    
+    # Check file storage
+    try:
+        file_conversation = load_conversation_data(conversation_id, "conversation")
+        if file_conversation:
+            response_data['file'] = {
+                'conversation_length': len(file_conversation),
+                'has_conversation': len(file_conversation) > 0,
+                'conversation_preview': [
+                    {'role': msg.get('role'), 'content_preview': msg.get('content', '')[:50] + '...' if len(msg.get('content', '')) > 50 else msg.get('content', '')}
+                    for msg in file_conversation[:2]
+                ] if file_conversation else []
+            }
+    except Exception as e:
+        response_data['file_error'] = str(e)
+    
+    return jsonify(response_data)
+
+
+
 @app.route('/update_conversation', methods=['POST'])
 def update_conversation():
     """Update the conversation with model response result"""
     data = request.get_json()
     result = data.get('result')
+    conversation_id = data.get('conversation_id')
     
     if not result:
         return jsonify({
@@ -1225,7 +1362,20 @@ def update_conversation():
         })
     
     # Update session
-    session_data = session.get('data', {})
+    try:
+        session_data = session.get('data', {})
+    except Exception as e:
+        # If session can't be retrieved, try to get from file
+        log_error(f"Error getting session data: {str(e)}")
+        session_data = {
+            'conversation_id': conversation_id,
+            'conversation': [],
+            'previous_data': {
+                'preferences': {},
+                'num_matches': 100
+            },
+            'saved_conversations': []
+        }
     
     # Update previous data for next iteration
     if 'data' in result:
@@ -1233,13 +1383,21 @@ def update_conversation():
     
     # Update conversation if message is present
     if 'message' in result:
-        session_data['conversation'].append(result['message'])
+        conversation = session_data.get('conversation', [])
+        conversation.append(result['message'])
+        session_data['conversation'] = conversation
+        
+        # Save conversation to file as backup
+        save_conversation_data(conversation_id, "conversation", conversation)
     
-    session['data'] = session_data
+    try:
+        session['data'] = session_data
+    except Exception as e:
+        log_error(f"Error updating session: {str(e)}")
     
     return jsonify({
         'status': 'success',
-        'conversation': session_data['conversation']
+        'conversation': session_data.get('conversation', [])
     })
 
 @app.route('/save_conversation', methods=['POST'])
@@ -1247,10 +1405,34 @@ def save_conversation():
     """Save the current conversation"""
     data = request.get_json()
     name = data.get('name', f"Conversation-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
+    conversation_id = data.get('conversation_id')
     
     # Get session data
     session_data = session.get('data', {})
     conversation = session_data.get('conversation', [])
+    
+    if not conversation:
+        # Try to get conversation from file if not in session
+        conversation_file = os.path.join("conversation_data", conversation_id, "conversation.json")
+        if os.path.exists(conversation_file):
+            try:
+                with open(conversation_file, 'r', encoding='utf-8') as f:
+                    conversation = json.load(f)
+                    # Update session data
+                    session_data['conversation'] = conversation
+                    session['data'] = session_data
+            except Exception as e:
+                log_error(f"Error loading conversation from file: {str(e)}")
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Failed to load conversation'
+                })
+    
+    if not conversation:
+        return jsonify({
+            'status': 'error',
+            'message': 'No conversation data available to save'
+        })
     
     # Create readable version that doesn't include thinking
     readable_conversation = []
@@ -1280,30 +1462,46 @@ def save_conversation():
                 })
     
     # Save conversation to file
+    os.makedirs("saved_conversations", exist_ok=True)
     conv_filename = f"saved_conversations/{name}_readable.json"
     detailed_filename = f"saved_conversations/{name}_detailed.json"
     
-    with open(conv_filename, 'w', encoding='utf-8') as f:
-        json.dump(readable_conversation, f, ensure_ascii=False, indent=2)
-    
-    with open(detailed_filename, 'w', encoding='utf-8') as f:
-        json.dump(conversation, f, ensure_ascii=False, indent=2)
-    
-    # Add to saved conversations list
-    saved_conversation = {
-        'name': name,
-        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'readable_file': conv_filename,
-        'detailed_file': detailed_filename
-    }
-    
-    session_data['saved_conversations'].append(saved_conversation)
-    session['data'] = session_data
-    
-    return jsonify({
-        'status': 'success',
-        'saved_conversation': saved_conversation
-    })
+    try:
+        with open(conv_filename, 'w', encoding='utf-8') as f:
+            json.dump(readable_conversation, f, ensure_ascii=False, indent=2)
+        
+        with open(detailed_filename, 'w', encoding='utf-8') as f:
+            json.dump(conversation, f, ensure_ascii=False, indent=2)
+        
+        # Add debug log for successful save
+        log_debug(f"Successfully saved conversation to {conv_filename} and {detailed_filename}")
+        
+        # Add to saved conversations list
+        saved_conversation = {
+            'name': name,
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'readable_file': conv_filename,
+            'detailed_file': detailed_filename
+        }
+        
+        session_data['saved_conversations'].append(saved_conversation)
+        session['data'] = session_data
+        
+        # Also save to file for backup
+        save_conversation_data(conversation_id, "saved_conversations", session_data['saved_conversations'])
+        
+        return jsonify({
+            'status': 'success',
+            'saved_conversation': saved_conversation
+        })
+    except Exception as e:
+        error_msg = f"Error saving conversation: {str(e)}"
+        log_error(error_msg)
+        return jsonify({
+            'status': 'error',
+            'message': error_msg
+        })
+
 
 @app.route('/get_saved_conversations', methods=['GET'])
 def get_saved_conversations():
@@ -1322,20 +1520,16 @@ def regenerate_assistant_response():
     data = request.get_json()
     conversation_id = data.get('conversation_id')
     
-    # Get session data
     session_data = session.get('data', {})
     conversation = session_data.get('conversation', [])
     
-    # Remove the last assistant message if it exists
     if conversation and len(conversation) > 0:
         if conversation[-1].get('role') == 'assistant':
             conversation.pop()
     
-    # Update session
     session_data['conversation'] = conversation
     session['data'] = session_data
     
-    # Process model response again
     previous_data = session_data.get('previous_data', {
         'preferences': {},
         'num_matches': 100
@@ -1344,8 +1538,8 @@ def regenerate_assistant_response():
     task = process_model_response_task.delay(
         'claude',
         conversation,
-        True,  # ENABLE_SEARCH
-        True,  # EVALUATE_RESPONSES
+        True,
+        True,
         previous_data,
         conversation_id
     )
@@ -1358,10 +1552,8 @@ def regenerate_assistant_response():
 @app.route('/clear_conversation', methods=['POST'])
 def clear_conversation():
     """Clear the current conversation but keep persona and requirements"""
-    # Get session data
     session_data = session.get('data', {})
     
-    # Keep persona and requirements, but clear conversation
     session_data['conversation'] = []
     session_data['previous_data'] = {
         'preferences': {},
@@ -1377,14 +1569,12 @@ def clear_conversation():
 @app.route('/reset', methods=['POST'])
 def reset():
     """Reset everything and start with a new conversation"""
-    # Clear session data
     session.clear()
     
     return jsonify({
         'status': 'success'
     })
 
-# WebSocket handlers
 @socketio.on('connect')
 def handle_connect():
     """Handle WebSocket connection"""
@@ -1417,19 +1607,13 @@ def task_status(task_id):
             'status': 'Success' if task.state == 'SUCCESS' else task.state
         }
         if task.info:
-            # If task has returned a result
             if isinstance(task.info, dict) and 'result' in task.info:
                 response['result'] = task.info['result']
             else:
-                # For simple string returns
                 response['result'] = str(task.info)[:100] + '...' if len(str(task.info)) > 100 else str(task.info)
     
     return jsonify(response)
 
-
-# Add this to your Flask app to store and retrieve persona data
-
-# Update the persona retrieval endpoint to use file storage
 @app.route('/get_persona', methods=['GET'])
 def get_persona():
     """Get the stored persona for a conversation"""
@@ -1440,7 +1624,6 @@ def get_persona():
             'message': 'No conversation ID provided'
         })
     
-    # Try to get from session first
     session_data = session.get('data', {})
     if session_data.get('conversation_id') == conversation_id and session_data.get('persona'):
         return jsonify({
@@ -1449,10 +1632,8 @@ def get_persona():
             'source': 'session'
         })
     
-    # If not in session, try file storage
     persona = load_conversation_data(conversation_id, "persona")
     if persona:
-        # Also update session for future requests
         try:
             session_data = session.get('data', {})
             session_data['persona'] = persona
@@ -1466,73 +1647,372 @@ def get_persona():
             'source': 'file'
         })
     
-    # Not found in either location
     return jsonify({
         'status': 'error',
         'message': 'No persona available for this conversation',
         'conversation_id': conversation_id
     })
 
-
-# Ensure storage directory exists
 os.makedirs("conversation_data", exist_ok=True)
 
 def save_conversation_data(conversation_id, key, value):
-    """Save a piece of conversation data to a file"""
+    """Save a piece of conversation data to a file with improved error handling"""
+    if not conversation_id:
+        log_error("Cannot save data: No conversation ID provided")
+        return False
+        
     try:
         # Create directory for this conversation
         conversation_dir = os.path.join("conversation_data", conversation_id)
         os.makedirs(conversation_dir, exist_ok=True)
         
-        # Save data to file
-        with open(os.path.join(conversation_dir, f"{key}.txt"), 'w', encoding='utf-8') as f:
+        # Save data to file, handle different data types
+        file_path = os.path.join(conversation_dir, f"{key}.json")
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
             if isinstance(value, str):
+                # For string values, write directly
                 f.write(value)
             else:
-                json.dump(value, f, ensure_ascii=False, indent=2)
+                # For dictionaries, lists, etc. use JSON
+                try:
+                    json.dump(value, f, ensure_ascii=False, indent=2)
+                except:
+                    # Fallback to string representation if JSON fails
+                    f.write(str(value))
         
+        # Log successful save
+        log_debug(f"Successfully saved {key} data for conversation {conversation_id}")
         return True
+        
     except Exception as e:
-        log_error(f"Error saving {key} for conversation {conversation_id}: {str(e)}")
+        error_msg = f"Error saving {key} for conversation {conversation_id}: {str(e)}"
+        log_error(error_msg)
         return False
 
 def load_conversation_data(conversation_id, key):
-    """Load a piece of conversation data from a file"""
+    """Load a piece of conversation data from a file with improved error handling"""
+    if not conversation_id:
+        log_error("Cannot load data: No conversation ID provided")
+        return None
+        
     try:
-        file_path = os.path.join("conversation_data", conversation_id, f"{key}.txt")
+        file_path = os.path.join("conversation_data", conversation_id, f"{key}.json")
         
         if not os.path.exists(file_path):
-            return None
+            # Also try with .txt extension
+            txt_file_path = os.path.join("conversation_data", conversation_id, f"{key}.txt")
+            if os.path.exists(txt_file_path):
+                file_path = txt_file_path
+            else:
+                return None
             
         with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            
+            # If empty file, return empty dict
+            if not content.strip():
+                return {}
+                
             try:
                 # Try to parse as JSON first
-                return json.load(f)
+                return json.loads(content)
             except json.JSONDecodeError:
-                # If not JSON, return as string
-                f.seek(0)
-                return f.read()
+                # If not valid JSON, return as string
+                return content
+                
     except Exception as e:
-        log_error(f"Error loading {key} for conversation {conversation_id}: {str(e)}")
+        error_msg = f"Error loading {key} for conversation {conversation_id}: {str(e)}"
+        log_error(error_msg)
         return None
     
-# Update the OpenAI completion task to store persona in a file
+
+@app.route('/check_webhook', methods=['GET'])
+def check_webhook():
+    """Test endpoint to check if websockets are working"""
+    try:
+        conversation_id = request.args.get('conversation_id', 'test')
+        message = request.args.get('message', 'Test message')
+        
+        # Try to emit a test event
+        socketio.emit('test_event', {
+            'conversation_id': conversation_id,
+            'message': message,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+        # Also try to emit to different namespaces to debug
+        socketio.emit('log_message', {
+            'type': 'debug',
+            'message': f"Test webhook: {message}"
+        })
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Webhook test initiated',
+            'conversation_id': conversation_id,
+            'test_message': message
+        })
+    
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Error testing webhook: {str(e)}',
+            'error': str(e)
+        })
+    
+@app.route('/get_ner_results', methods=['GET'])
+def get_ner_results():
+    """Get the NER results for a conversation"""
+    conversation_id = request.args.get('conversation_id')
+    
+    if not conversation_id:
+        return jsonify({
+            'status': 'error',
+            'message': 'No conversation ID provided'
+        })
+    
+    # Try to get NER results from file
+    ner_results = load_conversation_data(conversation_id, "ner_results")
+    
+    if ner_results:
+        return jsonify({
+            'status': 'success',
+            'results': ner_results
+        })
+    
+    # If we don't have cached results, get conversation and extract NER
+    try:
+        # Try to get conversation from session
+        session_data = session.get('data', {})
+        conversation = []
+        
+        if session_data.get('conversation_id') == conversation_id:
+            conversation = session_data.get('conversation', [])
+        
+        # If not in session, try file
+        if not conversation:
+            conversation = load_conversation_data(conversation_id, "conversation")
+        
+        if not conversation:
+            return jsonify({
+                'status': 'error',
+                'message': 'No conversation data found'
+            })
+        
+        # Extract NER
+        ner_results = extract_ner_from_conversation(conversation)
+        
+        # Save for future use
+        save_conversation_data(conversation_id, "ner_results", ner_results)
+        
+        return jsonify({
+            'status': 'success',
+            'results': ner_results,
+            'source': 'extracted'
+        })
+    
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Error getting NER results: {str(e)}'
+        })
+
+# Fix 9: Add a function to get search results directly via API
+@app.route('/get_search_results', methods=['GET'])
+def get_search_results():
+    """Get the most recent search results for a conversation"""
+    conversation_id = request.args.get('conversation_id')
+    
+    if not conversation_id:
+        return jsonify({
+            'status': 'error',
+            'message': 'No conversation ID provided'
+        })
+    
+    # Try to get search results from file
+    search_results = load_conversation_data(conversation_id, "search_results")
+    
+    if search_results:
+        return jsonify({
+            'status': 'success',
+            'results': search_results
+        })
+    
+    # If we don't have cached results, check the search history file
+    try:
+        try:
+            with open('search_history.json', 'r', encoding='utf-8') as f:
+                search_history = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            search_history = []
+            
+        # Find the most recent search for this conversation
+        relevant_searches = [
+            search for search in search_history 
+            if search.get('conversation_id') == conversation_id
+        ]
+        
+        if relevant_searches:
+            # Sort by timestamp if available
+            if 'timestamp' in relevant_searches[0]:
+                relevant_searches.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+            
+            most_recent = relevant_searches[0]
+            
+            # Save for future use
+            save_conversation_data(conversation_id, "search_results", most_recent)
+            
+            return jsonify({
+                'status': 'success',
+                'results': most_recent,
+                'source': 'history'
+            })
+        
+        return jsonify({
+            'status': 'warning',
+            'message': 'No search results found for this conversation'
+        })
+    
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Error getting search results: {str(e)}'
+        })
+
+# Fix 10: Add feedback endpoint to help debug frontend-backend communication
+@app.route('/feedback', methods=['POST'])
+def send_feedback():
+    """Endpoint for the frontend to send feedback or debugging information"""
+    data = request.get_json()
+    message = data.get('message', '')
+    type = data.get('type', 'debug')
+    conversation_id = data.get('conversation_id')
+    
+    # Log the feedback
+    timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+    log_line = f"[{timestamp}] FEEDBACK ({type}): {message}\n"
+    
+    with open("logs/feedback.txt", "a", encoding="utf-8") as f:
+        f.write(log_line)
+    
+    # Also emit as a log message
+    socketio.emit('log_message', {
+        'type': type,
+        'message': f"Feedback: {message}"
+    })
+    
+    # Save to conversation data if conversation_id provided
+    if conversation_id:
+        try:
+            feedback_data = load_conversation_data(conversation_id, "feedback") or []
+            feedback_data.append({
+                'timestamp': timestamp,
+                'type': type,
+                'message': message
+            })
+            save_conversation_data(conversation_id, "feedback", feedback_data)
+        except Exception as e:
+            log_error(f"Error saving feedback: {str(e)}")
+    
+    return jsonify({
+        'status': 'success',
+        'message': 'Feedback received'
+    })
+
+@app.route('/save_conversation_direct', methods=['POST'])
+def save_conversation_direct():
+    """Save conversation directly from UI data"""
+    data = request.get_json()
+    name = data.get('name', f"Conversation-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
+    conversation_id = data.get('conversation_id')
+    conversation = data.get('conversation', [])
+    
+    if not conversation:
+        return jsonify({
+            'status': 'error',
+            'message': 'No conversation data provided'
+        })
+    
+    # Save conversation to file
+    os.makedirs("saved_conversations", exist_ok=True)
+    conv_filename = f"saved_conversations/{name}_ui_saved.json"
+    
+    try:
+        with open(conv_filename, 'w', encoding='utf-8') as f:
+            json.dump(conversation, f, ensure_ascii=False, indent=2)
+        
+        # Also try to update session with this conversation
+        try:
+            session_data = session.get('data', {})
+            session_data['conversation'] = conversation
+            session['data'] = session_data
+        except Exception as e:
+            log_error(f"Error updating session with direct saved conversation: {str(e)}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Conversation saved directly to {conv_filename}',
+            'filename': conv_filename
+        })
+    except Exception as e:
+        error_msg = f"Error saving conversation directly: {str(e)}"
+        log_error(error_msg)
+        return jsonify({
+            'status': 'error',
+            'message': error_msg
+        })
+    
+# Add this to enable session restoration
+@app.before_request
+def restore_session_from_params():
+    """Attempt to restore session from URL parameters"""
+    if request.endpoint != 'static':
+        try:
+            conversation_id = request.args.get('conversation_id')
+            if conversation_id and 'data' not in session:
+                # If we have a conversation ID but no session, try to restore it
+                conversation_dir = os.path.join("conversation_data", conversation_id)
+                if os.path.exists(conversation_dir):
+                    # Load data from files
+                    conversation = load_conversation_data(conversation_id, "conversation")
+                    persona = load_conversation_data(conversation_id, "persona")
+                    requirements = load_conversation_data(conversation_id, "requirements")
+                    
+                    if conversation or persona or requirements:
+                        # Create session data
+                        session_data = {
+                            'conversation_id': conversation_id,
+                            'conversation': conversation or [],
+                            'persona': persona,
+                            'requirements': requirements,
+                            'previous_data': {
+                                'preferences': {},
+                                'num_matches': 100  # Default
+                            },
+                            'saved_conversations': []
+                        }
+                        
+                        # Update session
+                        session['data'] = session_data
+                        log_debug(f"Restored session from URL parameter for conversation_id: {conversation_id}")
+        except Exception as e:
+            log_error(f"Error in session restoration from URL params: {str(e)}")
+
+
 @celery.task(bind=True)
 def get_openai_completion_task(self, prompt, model="o3-mini", conversation_id=None):
     """Celery task for OpenAI completion with file-based storage"""
     result = get_openai_completion(prompt, model)
     
     if conversation_id:
-        # Emit the result via socketio
         socketio.emit('model_response', {
             'model': f'openai_{model}',
             'conversation_id': conversation_id,
             'response': result
         })
         
-        # For persona generation (step 1), store result in both session and file
         if 'persona.txt' in prompt and result:
-            # Store in session
             try:
                 session_data = session.get('data', {})
                 session_data['persona'] = result
@@ -1541,13 +2021,10 @@ def get_openai_completion_task(self, prompt, model="o3-mini", conversation_id=No
             except Exception as e:
                 log_error(f"Error storing persona in session: {str(e)}")
             
-            # Also store in file for reliable retrieval
             save_conversation_data(conversation_id, "persona", result)
             log_debug(f"Stored persona in file for conversation {conversation_id}")
         
-        # For requirements, store both in session and file
         if 'requirement.txt' in prompt and result:
-            # Store in session
             try:
                 session_data = session.get('data', {})
                 session_data['requirements'] = result
@@ -1555,15 +2032,12 @@ def get_openai_completion_task(self, prompt, model="o3-mini", conversation_id=No
             except Exception as e:
                 log_error(f"Error storing requirements in session: {str(e)}")
             
-            # Also store in file
             save_conversation_data(conversation_id, "requirements", result)
             log_debug(f"Stored requirements in file for conversation {conversation_id}")
         
-        # Log event emission
         log_debug(f"Emitted model_response event for {model} with conversation_id {conversation_id}")
     
     return result
-
 
 @app.route('/store_result_directly', methods=['POST'])
 def store_result_directly():
@@ -1579,14 +2053,11 @@ def store_result_directly():
             'message': 'Missing required parameters'
         })
     
-    # Store in both session and file
     try:
-        # Update session
         session_data = session.get('data', {})
         session_data[key] = value
         session['data'] = session_data
         
-        # Also store in file
         success = save_conversation_data(conversation_id, key, value)
         
         return jsonify({
@@ -1597,7 +2068,6 @@ def store_result_directly():
     except Exception as e:
         log_error(f"Error storing {key} for conversation {conversation_id}: {str(e)}")
         
-        # Try file storage only
         success = save_conversation_data(conversation_id, key, value)
         
         if success:
@@ -1613,8 +2083,6 @@ def store_result_directly():
                 'error': str(e)
             })
         
-
-# Similar update for requirements endpoint
 @app.route('/get_requirements', methods=['GET'])
 def get_requirements():
     """Get the stored requirements for a conversation"""
@@ -1625,7 +2093,6 @@ def get_requirements():
             'message': 'No conversation ID provided'
         })
     
-    # Try to get from session first
     session_data = session.get('data', {})
     if session_data.get('conversation_id') == conversation_id and session_data.get('requirements'):
         return jsonify({
@@ -1634,7 +2101,6 @@ def get_requirements():
             'source': 'session'
         })
     
-    # If not in session, try file storage
     requirements = load_conversation_data(conversation_id, "requirements")
     if requirements:
         return jsonify({
@@ -1643,7 +2109,6 @@ def get_requirements():
             'source': 'file'
         })
     
-    # Not found in either location
     return jsonify({
         'status': 'error',
         'message': 'No requirements available for this conversation'
@@ -1654,10 +2119,8 @@ def get_session_data():
     """Debug endpoint to get current session data"""
     conversation_id = request.args.get('conversation_id')
     
-    # Get session data
     session_data = session.get('data', {})
     
-    # Ensure we're working with the correct conversation or return all data for debugging
     if conversation_id and session_data.get('conversation_id') != conversation_id:
         return jsonify({
             'status': 'error',
@@ -1666,7 +2129,6 @@ def get_session_data():
             'session_id': session_data.get('conversation_id')
         })
     
-    # Return sanitized session data (don't include full conversation for brevity)
     sanitized_data = {
         'conversation_id': session_data.get('conversation_id'),
         'has_persona': session_data.get('persona') is not None,
@@ -1684,16 +2146,13 @@ def get_session_data():
 def get_last_message():
     """Get the last message from a conversation"""
     conversation_id = request.args.get('conversation_id')
-    message_type = request.args.get('type', 'user')  # 'user' or 'assistant'
+    message_type = request.args.get('type', 'user')
     
-    # Get session data
     session_data = session.get('data', {})
     
-    # Check if the conversation exists and has messages
     if session_data.get('conversation_id') == conversation_id and session_data.get('conversation'):
         conversation = session_data.get('conversation', [])
         
-        # Find the last message of the requested type
         for msg in reversed(conversation):
             if msg.get('role') == message_type:
                 return jsonify({
@@ -1711,7 +2170,6 @@ def get_last_message():
             'message': 'No conversation found with this ID'
         })
     
-# Debug route to check if server is running
 @app.route('/debug', methods=['GET'])
 def debug():
     """Debug route to check if server is running"""
@@ -1720,16 +2178,58 @@ def debug():
         'message': 'Server is running',
         'timestamp': datetime.now().isoformat()
     })
-
-if __name__ == "__main__":
-    socketio.run(app, debug=True, allow_unsafe_werkzeug=True)
-
+@app.route('/get_conversation', methods=['POST'])
+def get_conversation():
+    """Get the full conversation data"""
+    data = request.get_json()
+    conversation_id = data.get('conversation_id')
+    
+    if not conversation_id:
+        return jsonify({
+            'status': 'error',
+            'message': 'No conversation ID provided'
+        })
+    
+    # Try to get from session first
+    conversation = None
+    try:
+        session_data = session.get('data', {})
+        if session_data.get('conversation_id') == conversation_id:
+            conversation = session_data.get('conversation', [])
+    except Exception as e:
+        log_error(f"Error getting conversation from session: {str(e)}")
+    
+    # If not in session, try file storage
+    if not conversation:
+        try:
+            conversation = load_conversation_data(conversation_id, "conversation")
+        except Exception as e:
+            log_error(f"Error loading conversation from file: {str(e)}")
+    
+    if conversation:
+        # Create simplified conversation for UI
+        simplified_conversation = []
+        for msg in conversation:
+            if isinstance(msg, dict) and 'role' in msg:
+                simplified_conversation.append({
+                    'role': msg['role'],
+                    'content': msg.get('content', '')
+                })
+        
+        return jsonify({
+            'status': 'success',
+            'conversation': simplified_conversation
+        })
+    else:
+        return jsonify({
+            'status': 'error',
+            'message': 'Conversation not found'
+        })
 def get_combined_critique(original_prompt, conversation_history, search_record, assistant_response):
     """
     Get critiques from Together API.
     Returns a dictionary with the critique.
     """
-    # Get critique from Together API with DeepSeek-R1
     together_critique = get_critic_evaluation_together(
         original_prompt,
         conversation_history,
@@ -1737,12 +2237,10 @@ def get_combined_critique(original_prompt, conversation_history, search_record, 
         assistant_response
     )
     
-    # Combine both critiques
     combined_critique = {
         "together": together_critique,
     }
     
-    # Log the combined critique
     log_debug(f"Combined critique: {json.dumps(combined_critique, ensure_ascii=False)}")
     
     return combined_critique
@@ -1751,20 +2249,16 @@ def process_search_results(search_record):
     """
     Process search results and determine if they should be shown to the actor.
     Returns a tuple of (show_results_to_actor, search_text)
-    
-    Updated to ensure results are only shown to actor when matches < 50
     """
     if not search_record:
         return False, ""
         
     try:
-        # Extract the search response from the record
         search_response = search_record.get("results", "")
         if not search_response:
             log_debug("Empty search results found")
             return False, ""
             
-        # Try to extract the number of matches using various patterns
         num_matches = None
         patterns = [
             r'"Number of matches":\s*(\d+)',
@@ -1784,7 +2278,6 @@ def process_search_results(search_record):
                 except ValueError:
                     continue
         
-        # If we couldn't extract a number, check if the response explicitly mentions "no matches"
         if num_matches is None:
             no_matches_patterns = [
                 r'no matches',
@@ -1799,32 +2292,24 @@ def process_search_results(search_record):
                     num_matches = 0
                     break
         
-        # If we still couldn't determine the number of matches, do a fallback check
-        # by counting the number of distinct hotel entries or lines in the response
         if num_matches is None:
-            # Count hotel names as a rough estimate
             hotel_name_count = len(re.findall(r'Hotel name:', search_response, re.IGNORECASE))
             if hotel_name_count > 0:
                 num_matches = hotel_name_count
                 log_debug(f"Fallback: Estimated {num_matches} matches by counting 'Hotel name:' occurrences")
             else:
-                # As a last resort, count non-empty lines as an upper bound
                 line_count = len([line for line in search_response.split('\n') if line.strip()])
                 num_matches = line_count
                 log_debug(f"Last resort: Setting matches to line count: {num_matches}")
         
-        # Default to a high number if we still couldn't determine
         if num_matches is None:
             log_debug("Could not determine number of matches, defaulting to 100")
             num_matches = 100
         
-        # Store the extracted number for reference
         search_record["num_matches"] = num_matches
         
-        # EXPLICIT LOGGING of the actual comparison
         log_debug(f"Search result display decision: num_matches={num_matches}, threshold=50, comparison result: {num_matches < 50}")
         
-        # IMPORTANT: Only show results to actor when matches are LESS THAN 50
         if num_matches < 50:
             log_debug(f"SHOWING search results to actor ({num_matches} matches < 50)")
             return True, search_response
@@ -1836,3 +2321,94 @@ def process_search_results(search_record):
         error_msg = f"Error processing search results: {str(e)}"
         log_error(error_msg)
         return False, ""
+    
+@app.route('/restore_session', methods=['POST'])
+def restore_session():
+    """Restore session data from file storage"""
+    data = request.get_json()
+    conversation_id = data.get('conversation_id')
+    
+    if not conversation_id:
+        return jsonify({
+            'status': 'error',
+            'message': 'No conversation ID provided'
+        })
+    
+    try:
+        # Load data from files
+        conversation = load_conversation_data(conversation_id, "conversation")
+        persona = load_conversation_data(conversation_id, "persona")
+        requirements = load_conversation_data(conversation_id, "requirements")
+        ner_results = load_conversation_data(conversation_id, "ner_results")
+        saved_conversations = load_conversation_data(conversation_id, "saved_conversations")
+        
+        # Create session data
+        session_data = {
+            'conversation_id': conversation_id,
+            'conversation': conversation or [],
+            'persona': persona,
+            'requirements': requirements,
+            'previous_data': {
+                'preferences': ner_results or {},
+                'num_matches': 100  # Default
+            },
+            'saved_conversations': saved_conversations or []
+        }
+        
+        # Update session
+        session['data'] = session_data
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Session restored from file storage'
+        })
+    except Exception as e:
+        error_msg = f"Error restoring session: {str(e)}"
+        log_error(error_msg)
+        return jsonify({
+            'status': 'error',
+            'message': error_msg
+        })
+
+# Add this to enable session restoration
+@app.before_request
+def restore_session_from_params():
+    """Attempt to restore session from URL parameters"""
+    if request.endpoint != 'static':
+        try:
+            conversation_id = request.args.get('conversation_id')
+            if conversation_id and 'data' not in session:
+                # If we have a conversation ID but no session, try to restore it
+                conversation_dir = os.path.join("conversation_data", conversation_id)
+                if os.path.exists(conversation_dir):
+                    # Load data from files
+                    conversation = load_conversation_data(conversation_id, "conversation")
+                    persona = load_conversation_data(conversation_id, "persona")
+                    requirements = load_conversation_data(conversation_id, "requirements")
+                    
+                    if conversation or persona or requirements:
+                        # Create session data
+                        session_data = {
+                            'conversation_id': conversation_id,
+                            'conversation': conversation or [],
+                            'persona': persona,
+                            'requirements': requirements,
+                            'previous_data': {
+                                'preferences': {},
+                                'num_matches': 100  # Default
+                            },
+                            'saved_conversations': []
+                        }
+                        
+                        # Update session
+                        session['data'] = session_data
+                        log_debug(f"Restored session from URL parameter for conversation_id: {conversation_id}")
+        except Exception as e:
+            log_error(f"Error in session restoration from URL params: {str(e)}")
+
+            
+if __name__ == "__main__":
+    socketio.run(app, debug=True, allow_unsafe_werkzeug=True)
+
+
+

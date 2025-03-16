@@ -353,76 +353,135 @@
     <script src="https://cdn.jsdelivr.net/npm/socket.io/client-dist/socket.io.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script>
+        const USE_DIRECT_FETCH = true;
         document.addEventListener('DOMContentLoaded', function() {
-            // DOM Elements
-            const startBtn = document.getElementById('startBtn');
-            const nextBtn = document.getElementById('nextBtn');
-            const clearBtn = document.getElementById('clearBtn');
-            const resetBtn = document.getElementById('resetBtn');
-            const regenerateBtn = document.getElementById('regenerateBtn');
-            const saveConversationBtn = document.getElementById('saveConversationBtn');
-            const saveConversationModalBtn = document.getElementById('saveConversationModalBtn');
+    // DOM Element References
+    const startBtn = document.getElementById('startBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const regenerateBtn = document.getElementById('regenerateBtn');
+    const saveConversationBtn = document.getElementById('saveConversationBtn');
+    const saveConversationModalBtn = document.getElementById('saveConversationModalBtn');
+    
+    const conversationBox = document.getElementById('conversationBox');
+    const nerResults = document.getElementById('nerResults');
+    const searchCall = document.getElementById('searchCall');
+    const searchResults = document.getElementById('searchResults');
+    const critique = document.getElementById('critique');
+    const logs = document.getElementById('logs');
+    const personaDisplay = document.getElementById('personaDisplay');
+    const requirementsDisplay = document.getElementById('requirementsDisplay');
+    const savedConversationsList = document.getElementById('savedConversationsList');
+    
+    const steps = {
+        step1: document.getElementById('step1'),
+        step2: document.getElementById('step2'),
+        step3: document.getElementById('step3'),
+        step4: document.getElementById('step4'),
+        step5: document.getElementById('step5')
+    };
+    
+    // State variables
+    let currentStep = 1;
+    let conversationId = null;
+    let currentTaskId = null;
+    
+    // Modals
+    const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
+    const saveConversationModal = new bootstrap.Modal(document.getElementById('saveConversationModal'));
+    
+    // Tab functionality
+    const tabs = document.querySelectorAll('.tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            // Remove active class from all tabs
+            tabs.forEach(t => t.classList.remove('active'));
+            // Add active class to clicked tab
+            tab.classList.add('active');
             
-            const conversationBox = document.getElementById('conversationBox');
-            const nerResults = document.getElementById('nerResults');
-            const searchCall = document.getElementById('searchCall');
-            const searchResults = document.getElementById('searchResults');
-            const critique = document.getElementById('critique');
-            const logs = document.getElementById('logs');
-            const personaDisplay = document.getElementById('personaDisplay');
-            const requirementsDisplay = document.getElementById('requirementsDisplay');
-            const savedConversationsList = document.getElementById('savedConversationsList');
+            // Hide all tab content
+            const tabContents = document.querySelectorAll('.tab-content');
+            tabContents.forEach(content => content.classList.remove('active'));
             
-            // Workflow steps
-            const steps = {
-                step1: document.getElementById('step1'),
-                step2: document.getElementById('step2'),
-                step3: document.getElementById('step3'),
-                step4: document.getElementById('step4'),
-                step5: document.getElementById('step5')
-            };
+            // Show corresponding tab content
+            const tabContentId = tab.getAttribute('data-tab') + 'Tab';
+            document.getElementById(tabContentId).classList.add('active');
+        });
+    });
+
+    // Add debug button to UI
+    const debugBtn = document.createElement('button');
+    debugBtn.id = 'debugBtn';
+    debugBtn.className = 'btn btn-info ms-2';
+    debugBtn.innerHTML = '<i class="bi bi-bug"></i> Debug';
+    debugBtn.addEventListener('click', debugConversation);
+    resetBtn.parentNode.appendChild(debugBtn);
+    
+    // Event Listeners
+    startBtn.addEventListener('click', () => {
+        initConversation();
+    });
+    
+    nextBtn.addEventListener('click', () => {
+        if (currentStep === 5) {
+            generateNextUserMessage();
+        }
+    });
+    
+    clearBtn.addEventListener('click', () => {
+        clearConversation();
+    });
+    
+    resetBtn.addEventListener('click', () => {
+        resetEverything();
+    });
+    
+    regenerateBtn.addEventListener('click', () => {
+        regenerateAssistantResponse();
+    });
+    
+    saveConversationBtn.addEventListener('click', () => {
+        saveConversationModal.show();
+    });
+    
+    saveConversationModalBtn.addEventListener('click', () => {
+        const name = document.getElementById('conversationName').value || `Conversation-${new Date().toISOString().slice(0, 19).replace('T', '-').replace(/:/g, '')}`;
+        saveConversation(name);
+        saveConversationModal.hide();
+    });
+    
+    // Initialize all the enhancements
+    setupSocketHandlers();
+    setupPeriodicDataChecks();
+    addTroubleshootButton();
+    enhanceSocketConnection();
+    restoreBackups();
+    
+    // Update next button to use the new handler
+    nextBtn.removeEventListener('click', null);
+    nextBtn.addEventListener('click', handleNextButtonClick);
+    
+    // Set up session status checking
+    setInterval(checkSessionStatus, 60000);
+    
+    // Load initial data
+    getSavedConversations();
+    
+    console.log('Enhanced UI initialized');
+    addLogMessage('Enhanced UI initialized', 'debug');
+});
             
-            // State variables
-            let currentStep = 1;
-            let conversationId = null;
-            let currentTaskId = null;
-            
-            // Modals
-            const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
-            const saveConversationModal = new bootstrap.Modal(document.getElementById('saveConversationModal'));
-            
-            // Tab functionality
-            const tabs = document.querySelectorAll('.tab');
-            tabs.forEach(tab => {
-                tab.addEventListener('click', () => {
-                    // Remove active class from all tabs
-                    tabs.forEach(t => t.classList.remove('active'));
-                    // Add active class to clicked tab
-                    tab.classList.add('active');
-                    
-                    // Hide all tab content
-                    const tabContents = document.querySelectorAll('.tab-content');
-                    tabContents.forEach(content => content.classList.remove('active'));
-                    
-                    // Show corresponding tab content
-                    const tabContentId = tab.getAttribute('data-tab') + 'Tab';
-                    document.getElementById(tabContentId).classList.add('active');
-                });
-            });
-            
-            // Show loading modal with custom message
             function showLoading(message, subMessage = 'This may take a few moments') {
                 document.getElementById('loadingMessage').textContent = message;
                 document.getElementById('loadingSubMessage').textContent = subMessage;
                 loadingModal.show();
             }
             
-            // Hide loading modal
             function hideLoading() {
                 loadingModal.hide();
             }
             
-            // Set active step
             function setActiveStep(step) {
                 currentStep = step;
                 Object.values(steps).forEach((stepEl, index) => {
@@ -434,13 +493,11 @@
                     }
                 });
                 
-                // Enable/disable next button based on step
                 if (step > 1) {
                     nextBtn.disabled = false;
                     clearBtn.disabled = false;
                     saveConversationBtn.disabled = false;
                     
-                    // Only enable regenerate when we have an assistant response
                     const conversation = getConversationFromUI();
                     if (conversation.length > 0 && conversation[conversation.length - 1].role === 'assistant') {
                         regenerateBtn.disabled = false;
@@ -450,7 +507,6 @@
                 }
             }
             
-            // Add message to conversation UI
             function addMessageToUI(role, content) {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = role === 'user' ? 'user-message' : 'assistant-message';
@@ -459,7 +515,6 @@
                 conversationBox.scrollTop = conversationBox.scrollHeight;
             }
             
-            // Get conversation from UI
             function getConversationFromUI() {
                 const messages = conversationBox.querySelectorAll('.message-container > div');
                 const conversation = [];
@@ -474,8 +529,112 @@
                 
                 return conversation;
             }
+
+            function checkWebSocketConnection() {
+    console.log('Checking WebSocket connection...');
+    addLogMessage('Checking WebSocket connection...', 'debug');
+    
+    // Check if socket is connected
+    if (socket.connected) {
+        console.log('Socket is connected!');
+        addLogMessage('Socket is connected! 🟢', 'debug');
+        
+        // Test sending an event
+        sendFeedback('WebSocket connection test', 'debug');
+        
+        // Call the check_webhook endpoint to test server-to-client communication
+        axios.get(`/check_webhook?conversation_id=${conversationId}&message=UI-initiated test`)
+            .then(response => {
+                console.log('Check webhook response:', response.data);
+                addLogMessage('Sent webhook test request', 'debug');
+            })
+            .catch(error => {
+                console.error('Error checking webhook:', error);
+                addLogMessage(`Error checking webhook: ${error.message}`, 'error');
+            });
+    } else {
+        console.log('Socket is disconnected!');
+        addLogMessage('Socket is disconnected! 🔴', 'error');
+        
+        // Try to reconnect
+        socket.connect();
+        addLogMessage('Attempting to reconnect...', 'debug');
+    }
+}
+
+function setupSocketHandlers() {
+    // Remove any existing handlers to prevent duplicates
+    socket.off('ner_extracted');
+    socket.off('search_call_processed');
+    socket.off('search_results');
+    socket.off('critic_evaluation');
+    socket.off('combined_critique');
+    socket.off('model_response');
+    socket.off('model_response_processed');
+    socket.off('test_event');
+}
+
+// Fix 2: Add a function to send feedback to the server
+function sendFeedback(message, type = 'debug') {
+    axios.post('/feedback', {
+        message: message,
+        type: type,
+        conversation_id: conversationId
+    })
+        .then(response => {
+            console.log('Feedback sent:', response.data);
+        })
+        .catch(error => {
+            console.error('Error sending feedback:', error);
+        });
+}
+
+// Fix 3: Add direct API fetch methods for when WebSockets fail
+function fetchNERResultsDirectly() {
+    if (!conversationId) {
+        console.error('No conversation ID available');
+        addLogMessage('Cannot fetch NER results: No conversation ID', 'error');
+        return;
+    }
+    
+    axios.get(`/get_ner_results?conversation_id=${conversationId}`)
+        .then(response => {
+            if (response.data.status === 'success' && response.data.results) {
+                nerResults.innerHTML = `<pre>${JSON.stringify(response.data.results, null, 2)}</pre>`;
+                addLogMessage(`Successfully fetched NER results (source: ${response.data.source || 'API'})`, 'debug');
+            } else {
+                addLogMessage(`No NER results available: ${response.data.message}`, 'warning');
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching NER results:', error);
+            addLogMessage(`Error fetching NER results: ${error.message}`, 'error');
+        });
+}
+
+function fetchSearchResultsDirectly() {
+    if (!conversationId) {
+        console.error('No conversation ID available');
+        addLogMessage('Cannot fetch search results: No conversation ID', 'error');
+        return;
+    }
+    
+    axios.get(`/get_search_results?conversation_id=${conversationId}`)
+        .then(response => {
+            if (response.data.status === 'success' && response.data.results) {
+                searchResults.innerHTML = `<pre>${JSON.stringify(response.data.results, null, 2)}</pre>`;
+                addLogMessage(`Successfully fetched search results (source: ${response.data.source || 'API'})`, 'debug');
+            } else {
+                addLogMessage(`No search results available: ${response.data.message}`, 'warning');
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching search results:', error);
+            addLogMessage(`Error fetching search results: ${error.message}`, 'error');
+        });
+}
+
             
-            // Add log message to UI
             function addLogMessage(message, type) {
                 const logMessage = document.createElement('div');
                 logMessage.className = `log-message ${type}`;
@@ -484,7 +643,6 @@
                 logs.scrollTop = logs.scrollHeight;
             }
             
-            // Socket.io connection with debug enabled
             const socket = io({
                 transports: ['websocket', 'polling'],
                 reconnection: true,
@@ -492,7 +650,6 @@
                 reconnectionDelay: 1000
             });
             
-            // Socket connection event handlers for debugging
             socket.on('connect', () => {
                 console.log('WebSocket connected!');
                 addLogMessage('WebSocket connected', 'debug');
@@ -554,27 +711,17 @@
                     addLogMessage(`Received ${data.model} response`, 'debug');
                     
                     if (data.model === 'openai_o3-mini') {
-                        // Handle different model responses based on current step
                         if (currentStep === 1) {
-                            // Persona response
                             personaDisplay.innerHTML = `<pre>${data.response}</pre>`;
                             addLogMessage('Updated persona display', 'debug');
-                            
-                            // Move to next step - Generate requirements
                             generateRequirements(data.response);
                         } else if (currentStep === 2) {
-                            // Requirements response
                             requirementsDisplay.innerHTML = `<pre>${data.response}</pre>`;
                             addLogMessage('Updated requirements display', 'debug');
-                            
-                            // Move to next step - Generate initial user message
                             generateInitialUserMessage(data.response);
                         } else if (currentStep === 3 || currentStep === 5) {
-                            // User message response
                             addMessageToUI('user', data.response);
                             addLogMessage('Added user message to UI', 'debug');
-                            
-                            // Add to backend conversation
                             addUserMessageToBackend(data.response);
                         }
                     }
@@ -585,27 +732,20 @@
             
             socket.on('model_response_processed', (data) => {
                 if (data.conversation_id === conversationId) {
-                    // Update the conversation with assistant response
                     if (data.result && data.result.message) {
                         addMessageToUI('assistant', data.result.message.content);
-                        
-                        // Update conversation in backend
                         updateConversationInBackend(data.result);
-                        
-                        // Enable regenerate button
                         regenerateBtn.disabled = false;
                     }
                     
                     hideLoading();
                     
-                    // If we're in step 4, move to step 5
                     if (currentStep === 4) {
                         setActiveStep(5);
                     }
                 }
             });
             
-            // Function to check task status via API
             function checkTaskStatus(taskId) {
                 return axios.get(`/task_status/${taskId}`)
                     .then(response => {
@@ -618,298 +758,258 @@
                     });
             }
             
-           // Updated pollTaskCompletion function to use direct result fetching
-function pollTaskCompletion(taskId, loadingMessage, subMessage = 'This may take a few moments') {
-    // Update loading message
-    document.getElementById('loadingMessage').textContent = loadingMessage;
-    document.getElementById('loadingSubMessage').textContent = subMessage;
-    
-    console.log(`Polling task ${taskId} with message: ${loadingMessage}`);
-    addLogMessage(`Polling task ${taskId}`, 'debug');
-    
-    // Store current task ID for later use
-    currentTaskId = taskId;
-    
-    // Check task status every 2 seconds
-    const interval = setInterval(() => {
-        checkTaskStatus(taskId).then(taskData => {
-            if (taskData.state === 'SUCCESS') {
-                clearInterval(interval);
-                addLogMessage(`Task ${taskId} completed successfully`, 'debug');
+            function pollTaskCompletion(taskId, loadingMessage, subMessage = 'This may take a few moments') {
+                document.getElementById('loadingMessage').textContent = loadingMessage;
+                document.getElementById('loadingSubMessage').textContent = subMessage;
                 
-                // Wait a short period to see if WebSocket updates UI
+                console.log(`Polling task ${taskId} with message: ${loadingMessage}`);
+                addLogMessage(`Polling task ${taskId}`, 'debug');
+                
+                currentTaskId = taskId;
+                
+                const interval = setInterval(() => {
+                    checkTaskStatus(taskId).then(taskData => {
+                        if (taskData.state === 'SUCCESS') {
+                            clearInterval(interval);
+                            addLogMessage(`Task ${taskId} completed successfully`, 'debug');
+                            
+                            setTimeout(() => {
+                                if (loadingModal._element.classList.contains('show') && 
+                                    document.getElementById('loadingMessage').textContent === loadingMessage) {
+                                    
+                                    console.warn('Task completed but UI not updated. Using direct result fetch.');
+                                    addLogMessage('Task completed but UI not updated. Using direct result fetch.', 'warning');
+                                    fetchDirectTaskResult(taskId);
+                                }
+                            }, 2000);
+                        }
+                        else if (taskData.state === 'FAILURE') {
+                            clearInterval(interval);
+                            hideLoading();
+                            addLogMessage(`Task ${taskId} failed: ${taskData.error || 'Unknown error'}`, 'error');
+                            alert(`Task failed: ${taskData.error || 'Unknown error'}`);
+                        }
+                    });
+                }, 2000);
+                
                 setTimeout(() => {
-                    // If we're still showing loading for this task, assume WebSocket failed
+                    clearInterval(interval);
+                    
                     if (loadingModal._element.classList.contains('show') && 
                         document.getElementById('loadingMessage').textContent === loadingMessage) {
                         
-                        console.warn('Task completed but UI not updated. Using direct result fetch.');
-                        addLogMessage('Task completed but UI not updated. Using direct result fetch.', 'warning');
-                        
-                        // Use direct task result without storing
+                        console.warn(`Timeout reached for task ${taskId}. Using direct result fetch.`);
+                        addLogMessage(`Timeout reached for task ${taskId}. Using direct result fetch.`, 'warning');
                         fetchDirectTaskResult(taskId);
                     }
-                }, 2000); // Wait 2 seconds for WebSocket update before fallback
+                }, 60000);
             }
-            else if (taskData.state === 'FAILURE') {
-                clearInterval(interval);
-                hideLoading();
-                addLogMessage(`Task ${taskId} failed: ${taskData.error || 'Unknown error'}`, 'error');
-                alert(`Task failed: ${taskData.error || 'Unknown error'}`);
-            }
-        });
-    }, 2000);
-    
-    // Clear interval after 60 seconds (failsafe)
-    setTimeout(() => {
-        clearInterval(interval);
-        
-        // If we're still showing the loading modal for this task
-        if (loadingModal._element.classList.contains('show') && 
-            document.getElementById('loadingMessage').textContent === loadingMessage) {
-            
-            console.warn(`Timeout reached for task ${taskId}. Using direct result fetch.`);
-            addLogMessage(`Timeout reached for task ${taskId}. Using direct result fetch.`, 'warning');
-            
-            // Try one last time to get the result directly
-            fetchDirectTaskResult(taskId);
-        }
-    }, 60000);
-}
-            
-function handleTaskCompletionFallback(taskId, taskData) {
-    console.log('Handling task completion fallback', taskId, taskData);
-    
-    // Create delay to ensure server has processed task result
-    setTimeout(() => {
-        // Determine what to do based on current step
-        if (currentStep === 1) {
-            // For persona generation
-            fetchPersonaData();
-        }
-        else if (currentStep === 2 && personaDisplay.textContent.trim() !== 'No persona generated yet.') {
-            // If we have a persona but waiting for requirements
-            axios.get(`/get_requirements?conversation_id=${conversationId}`)
-                .then(response => {
-                    if (response.data.status === 'success' && response.data.requirements) {
-                        requirementsDisplay.innerHTML = `<pre>${response.data.requirements}</pre>`;
-                        addLogMessage('Successfully fetched requirements data via API', 'debug');
-                        
-                        // Move to next step
-                        generateInitialUserMessage(response.data.requirements);
-                    } else {
-                        // If requirements not found in session, use the persona to generate them
-                        const persona = personaDisplay.querySelector('pre').textContent;
-                        generateRequirements(persona);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching requirements:', error);
-                    
-                    // Fallback - use persona to generate requirements
-                    const persona = personaDisplay.querySelector('pre').textContent;
-                    generateRequirements(persona);
-                });
-        }
-        else if (currentStep === 3 && requirementsDisplay.textContent.trim() !== 'No requirements generated yet.') {
-            // If we have requirements but waiting for user message
-            axios.get(`/get_last_message?conversation_id=${conversationId}&type=user`)
-                .then(response => {
-                    if (response.data.status === 'success' && response.data.message) {
-                        addMessageToUI('user', response.data.message);
-                        addLogMessage('Successfully fetched user message via API', 'debug');
-                        
-                        // Process model response
-                        processModelResponse();
-                    } else {
-                        // If user message not found, generate it
-                        const requirements = requirementsDisplay.querySelector('pre').textContent;
-                        generateInitialUserMessage(requirements);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching user message:', error);
-                    
-                    // Fallback - generate user message
-                    const requirements = requirementsDisplay.querySelector('pre').textContent;
-                    generateInitialUserMessage(requirements);
-                });
-        }
-        else if (currentStep === 4) {
-            // For assistant response
-            axios.get(`/get_last_message?conversation_id=${conversationId}&type=assistant`)
-                .then(response => {
-                    if (response.data.status === 'success' && response.data.message) {
-                        addMessageToUI('assistant', response.data.message);
-                        addLogMessage('Successfully fetched assistant message via API', 'debug');
-                        
-                        // Move to next step
-                        setActiveStep(5);
-                        hideLoading();
-                    } else {
-                        // If assistant message not found, process response again
-                        processModelResponse();
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching assistant message:', error);
-                    hideLoading();
-                });
-        }
-        else if (currentStep === 5) {
-            // For next user message
-            generateNextUserMessage();
-        }
-        else {
-            // General case - just hide loading
-            hideLoading();
-        }
-    }, 1000); // 1 second delay to ensure server has processed everything
-}
-// Store model response when WebSockets fail
-function storeModelResponse(model, response, step) {
-    console.log(`Storing ${model} response for step ${step}`);
-    
-    axios.post('/store_model_response', {
-        conversation_id: conversationId,
-        model: model,
-        response: response,
-        step: step
-    })
+            function debugConversation() {
+    axios.get(`/debug_conversation?conversation_id=${conversationId}`)
         .then(response => {
-            console.log('Store model response result:', response.data);
-            addLogMessage(`Stored model response for step ${step}`, 'debug');
+            console.log('Debug conversation data:', response.data);
+            addLogMessage('Conversation debug data received - check console', 'debug');
+            
+            // Add to logs for easier viewing
+            const logData = JSON.stringify(response.data, null, 2);
+            addLogMessage(`Conversation data sources:\n${logData}`, 'debug');
         })
         .catch(error => {
-            console.error('Error storing model response:', error);
-            addLogMessage(`Error storing model response: ${error.message}`, 'error');
+            console.error('Error debugging conversation:', error);
+            addLogMessage(`Error debugging conversation: ${error.message}`, 'error');
         });
 }
 
-// Function to fetch task result directly with improved handling for step 4
-function fetchDirectTaskResult(taskId) {
-    console.log(`Fetching direct result for task ${taskId}`);
-    addLogMessage(`Fetching direct result for task ${taskId}`, 'debug');
-    
-    axios.get(`/get_task_result/${taskId}`)
-        .then(response => {
-            console.log('Task result response:', response.data);
-            
-            if (response.data.status === 'success' && response.data.result) {
-                const result = response.data.result;
+// Add a debug button in the UI right after the resetBtn definition
+const debugBtn = document.createElement('button');
+debugBtn.id = 'debugBtn';
+debugBtn.className = 'btn btn-info ms-2';
+debugBtn.innerHTML = '<i class="bi bi-bug"></i> Debug';
+debugBtn.addEventListener('click', debugConversation);
+resetBtn.parentNode.appendChild(debugBtn);
+            function handleTaskCompletionFallback(taskId, taskData) {
+                console.log('Handling task completion fallback', taskId, taskData);
                 
-                // Determine what to do with the result based on current step
-                if (currentStep === 1) {
-                    // For persona generation (simple string result)
-                    personaDisplay.innerHTML = `<pre>${result}</pre>`;
-                    addLogMessage('Retrieved persona directly from task result', 'debug');
-                    
-                    // Move to next step
-                    generateRequirements(result);
-                }
-                else if (currentStep === 2) {
-                    // For requirements (simple string result)
-                    requirementsDisplay.innerHTML = `<pre>${result}</pre>`;
-                    addLogMessage('Retrieved requirements directly from task result', 'debug');
-                    
-                    // Move to next step
-                    generateInitialUserMessage(result);
-                }
-                else if (currentStep === 3 || currentStep === 5) {
-                    // For user message (simple string result)
-                    addMessageToUI('user', result);
-                    addLogMessage('Retrieved user message directly from task result', 'debug');
-                    
-                    // Process model response
-                    processModelResponse();
-                }
-                else if (currentStep === 4) {
-                    // For model response processing (complex object result)
-                    console.log('Processing model response result:', result);
-                    
-                    // Check if result has the expected format
-                    if (typeof result === 'object' && result.message && result.message.content) {
-                        // Add the assistant message to UI
-                        addMessageToUI('assistant', result.message.content);
-                        addLogMessage('Retrieved and displayed assistant message from task result', 'debug');
-                        
-                        // Update conversation in backend
-                        updateConversationInBackend(result);
-                        
-                        // Enable regenerate button
-                        regenerateBtn.disabled = false;
-                        
-                        // Move to next step
-                        setActiveStep(5);
-                        
-                        // Hide loading
-                        hideLoading();
-                    } else {
-                        console.error('Model response result has unexpected format:', result);
-                        addLogMessage('Model response result has unexpected format', 'error');
+                setTimeout(() => {
+                    if (currentStep === 1) {
+                        fetchPersonaData();
+                    }
+                    else if (currentStep === 2 && personaDisplay.textContent.trim() !== 'No persona generated yet.') {
+                        axios.get(`/get_requirements?conversation_id=${conversationId}`)
+                            .then(response => {
+                                if (response.data.status === 'success' && response.data.requirements) {
+                                    requirementsDisplay.innerHTML = `<pre>${response.data.requirements}</pre>`;
+                                    addLogMessage('Successfully fetched requirements data via API', 'debug');
+                                    generateInitialUserMessage(response.data.requirements);
+                                } else {
+                                    const persona = personaDisplay.querySelector('pre').textContent;
+                                    generateRequirements(persona);
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error fetching requirements:', error);
+                                const persona = personaDisplay.querySelector('pre').textContent;
+                                generateRequirements(persona);
+                            });
+                    }
+                    else if (currentStep === 3 && requirementsDisplay.textContent.trim() !== 'No requirements generated yet.') {
+                        axios.get(`/get_last_message?conversation_id=${conversationId}&type=user`)
+                            .then(response => {
+                                if (response.data.status === 'success' && response.data.message) {
+                                    addMessageToUI('user', response.data.message);
+                                    addLogMessage('Successfully fetched user message via API', 'debug');
+                                    processModelResponse();
+                                } else {
+                                    const requirements = requirementsDisplay.querySelector('pre').textContent;
+                                    generateInitialUserMessage(requirements);
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error fetching user message:', error);
+                                const requirements = requirementsDisplay.querySelector('pre').textContent;
+                                generateInitialUserMessage(requirements);
+                            });
+                    }
+                    else if (currentStep === 4) {
+                        axios.get(`/get_last_message?conversation_id=${conversationId}&type=assistant`)
+                            .then(response => {
+                                if (response.data.status === 'success' && response.data.message) {
+                                    addMessageToUI('assistant', response.data.message);
+                                    addLogMessage('Successfully fetched assistant message via API', 'debug');
+                                    setActiveStep(5);
+                                    hideLoading();
+                                } else {
+                                    processModelResponse();
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error fetching assistant message:', error);
+                                hideLoading();
+                            });
+                    }
+                    else if (currentStep === 5) {
+                        generateNextUserMessage();
+                    }
+                    else {
                         hideLoading();
                     }
-                }
-                else {
-                    // General case
-                    console.log('Unknown step for direct task result:', currentStep);
-                    addLogMessage(`Unknown step ${currentStep} for direct task result`, 'warning');
-                    hideLoading();
-                }
-            } else {
-                console.error('Failed to get task result or result is empty');
-                addLogMessage('Failed to get task result or result is empty', 'error');
-                hideLoading();
+                }, 1000);
             }
-        })
-        .catch(error => {
-            console.error('Error fetching direct task result:', error);
-            addLogMessage(`Error fetching direct task result: ${error.message}`, 'error');
-            hideLoading();
-        });
-}
+            
+            function storeModelResponse(model, response, step) {
+                console.log(`Storing ${model} response for step ${step}`);
+                
+                axios.post('/store_model_response', {
+                    conversation_id: conversationId,
+                    model: model,
+                    response: response,
+                    step: step
+                })
+                    .then(response => {
+                        console.log('Store model response result:', response.data);
+                        addLogMessage(`Stored model response for step ${step}`, 'debug');
+                    })
+                    .catch(error => {
+                        console.error('Error storing model response:', error);
+                        addLogMessage(`Error storing model response: ${error.message}`, 'error');
+                    });
+            }
 
-// Enhanced fetchPersonaData function with direct task result fallback
-function fetchPersonaData() {
-    console.log('Fetching persona data via API');
-    
-    axios.get(`/get_persona?conversation_id=${conversationId}`)
-        .then(response => {
-            console.log('Persona API response:', response.data);
-            
-            if (response.data.status === 'success' && response.data.persona) {
-                personaDisplay.innerHTML = `<pre>${response.data.persona}</pre>`;
-                addLogMessage(`Successfully fetched persona data via API (source: ${response.data.source})`, 'debug');
+            function fetchDirectTaskResult(taskId) {
+                console.log(`Fetching direct result for task ${taskId}`);
+                addLogMessage(`Fetching direct result for task ${taskId}`, 'debug');
                 
-                // Move to next step - Generate requirements
-                generateRequirements(response.data.persona);
-            } else {
-                // If not found in file or session, try direct task result
-                console.log('Persona not found in session or file, trying direct task result');
+                axios.get(`/get_task_result/${taskId}`)
+                    .then(response => {
+                        console.log('Task result response:', response.data);
+                        
+                        if (response.data.status === 'success' && response.data.result) {
+                            const result = response.data.result;
+                            
+                            if (currentStep === 1) {
+                                personaDisplay.innerHTML = `<pre>${result}</pre>`;
+                                addLogMessage('Retrieved persona directly from task result', 'debug');
+                                generateRequirements(result);
+                            }
+                            else if (currentStep === 2) {
+                                requirementsDisplay.innerHTML = `<pre>${result}</pre>`;
+                                addLogMessage('Retrieved requirements directly from task result', 'debug');
+                                generateInitialUserMessage(result);
+                            }
+                            else if (currentStep === 3 || currentStep === 5) {
+                                addMessageToUI('user', result);
+                                addLogMessage('Retrieved user message directly from task result', 'debug');
+                                processModelResponse();
+                            }
+                            else if (currentStep === 4) {
+                                console.log('Processing model response result:', result);
+                                
+                                if (typeof result === 'object' && result.message && result.message.content) {
+                                    addMessageToUI('assistant', result.message.content);
+                                    addLogMessage('Retrieved and displayed assistant message from task result', 'debug');
+                                    updateConversationInBackend(result);
+                                    regenerateBtn.disabled = false;
+                                    setActiveStep(5);
+                                    hideLoading();
+                                } else {
+                                    console.error('Model response result has unexpected format:', result);
+                                    addLogMessage('Model response result has unexpected format', 'error');
+                                    hideLoading();
+                                }
+                            }
+                            else {
+                                console.log('Unknown step for direct task result:', currentStep);
+                                addLogMessage(`Unknown step ${currentStep} for direct task result`, 'warning');
+                                hideLoading();
+                            }
+                        } else {
+                            console.error('Failed to get task result or result is empty');
+                            addLogMessage('Failed to get task result or result is empty', 'error');
+                            hideLoading();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching direct task result:', error);
+                        addLogMessage(`Error fetching direct task result: ${error.message}`, 'error');
+                        hideLoading();
+                    });
+            }
+            
+            function fetchPersonaData() {
+                console.log('Fetching persona data via API');
                 
-                if (currentTaskId) {
-                    fetchDirectTaskResult(currentTaskId);
-                } else {
-                    console.error('No task ID available');
-                    addLogMessage('No task ID available for direct result fetch', 'error');
-                    hideLoading();
-                }
+                axios.get(`/get_persona?conversation_id=${conversationId}`)
+                    .then(response => {
+                        console.log('Persona API response:', response.data);
+                        
+                        if (response.data.status === 'success' && response.data.persona) {
+                            personaDisplay.innerHTML = `<pre>${response.data.persona}</pre>`;
+                            addLogMessage(`Successfully fetched persona data via API (source: ${response.data.source})`, 'debug');
+                            generateRequirements(response.data.persona);
+                        } else {
+                            console.log('Persona not found in session or file, trying direct task result');
+                            
+                            if (currentTaskId) {
+                                fetchDirectTaskResult(currentTaskId);
+                            } else {
+                                console.error('No task ID available');
+                                addLogMessage('No task ID available for direct result fetch', 'error');
+                                hideLoading();
+                            }
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching persona:', error);
+                        addLogMessage(`Error fetching persona: ${error.message}`, 'error');
+                        
+                        if (currentTaskId) {
+                            fetchDirectTaskResult(currentTaskId);
+                        } else {
+                            hideLoading();
+                        }
+                    });
             }
-        })
-        .catch(error => {
-            console.error('Error fetching persona:', error);
-            addLogMessage(`Error fetching persona: ${error.message}`, 'error');
             
-            // Try direct task result as fallback
-            if (currentTaskId) {
-                fetchDirectTaskResult(currentTaskId);
-            } else {
-                hideLoading();
-            }
-        });
-}
-            
-            // Init conversation
             function initConversation() {
                 showLoading('Initializing conversation...', 'Setting up workflow');
                 
@@ -919,8 +1019,6 @@ function fetchPersonaData() {
                         currentTaskId = response.data.task_id;
                         
                         addLogMessage(`Conversation initialized with ID: ${conversationId}`, 'debug');
-                        
-                        // Poll for task completion
                         pollTaskCompletion(currentTaskId, 'Generating persona...');
                     })
                     .catch(error => {
@@ -930,7 +1028,6 @@ function fetchPersonaData() {
                     });
             }
             
-            // Generate requirements based on persona
             function generateRequirements(persona) {
                 showLoading('Generating requirements...', 'Based on persona');
                 
@@ -940,11 +1037,7 @@ function fetchPersonaData() {
                 })
                     .then(response => {
                         currentTaskId = response.data.task_id;
-                        
-                        // Update step
                         setActiveStep(2);
-                        
-                        // Poll for task completion
                         pollTaskCompletion(currentTaskId, 'Generating requirements...');
                     })
                     .catch(error => {
@@ -954,7 +1047,6 @@ function fetchPersonaData() {
                     });
             }
             
-            // Generate initial user message
             function generateInitialUserMessage(requirements) {
                 showLoading('Generating initial user message...', 'Based on persona and requirements');
                 
@@ -964,11 +1056,7 @@ function fetchPersonaData() {
                 })
                     .then(response => {
                         currentTaskId = response.data.task_id;
-                        
-                        // Update step
                         setActiveStep(3);
-                        
-                        // Poll for task completion
                         pollTaskCompletion(currentTaskId, 'Generating initial user message...');
                     })
                     .catch(error => {
@@ -978,14 +1066,12 @@ function fetchPersonaData() {
                     });
             }
             
-            // Add user message to backend
             function addUserMessageToBackend(message) {
                 axios.post('/add_user_message', {
                     message: message,
                     conversation_id: conversationId
                 })
                     .then(() => {
-                        // Process model response
                         processModelResponse();
                     })
                     .catch(error => {
@@ -994,11 +1080,8 @@ function fetchPersonaData() {
                     });
             }
             
-            // Process model response
             function processModelResponse() {
                 showLoading('Processing model response...', 'This may take a minute or two');
-                
-                // Update step
                 setActiveStep(4);
                 
                 axios.post('/process_model_response', {
@@ -1006,8 +1089,6 @@ function fetchPersonaData() {
                 })
                     .then(response => {
                         currentTaskId = response.data.task_id;
-                        
-                        // Poll for task completion
                         pollTaskCompletion(currentTaskId, 'Processing model response...', 'This may take a minute or two');
                     })
                     .catch(error => {
@@ -1017,11 +1098,8 @@ function fetchPersonaData() {
                     });
             }
             
-            // Generate next user message
             function generateNextUserMessage() {
                 showLoading('Generating next user message...', 'Based on conversation history');
-                
-                // Update step
                 setActiveStep(5);
                 
                 axios.post('/generate_next_user_message', {
@@ -1029,8 +1107,6 @@ function fetchPersonaData() {
                 })
                     .then(response => {
                         currentTaskId = response.data.task_id;
-                        
-                        // Poll for task completion
                         pollTaskCompletion(currentTaskId, 'Generating next user message...');
                     })
                     .catch(error => {
@@ -1040,42 +1116,553 @@ function fetchPersonaData() {
                     });
             }
             
-            // Update conversation in backend
-            function updateConversationInBackend(result) {
-                axios.post('/update_conversation', {
-                    result: result
-                })
-                    .then(() => {
-                        addLogMessage('Conversation updated in backend', 'debug');
-                    })
-                    .catch(error => {
-                        console.error('Error updating conversation:', error);
-                        addLogMessage(`Error updating conversation: ${error.message}`, 'error');
-                    });
-            }
-            
-            // Save conversation
-            function saveConversation(name) {
-                showLoading('Saving conversation...', 'This will create JSON files');
+            // Fix 4: Update conversation function to use API when socket fails
+function updateConversationInBackend(result) {
+    axios.post('/update_conversation', {
+        result: result,
+        conversation_id: conversationId
+    })
+        .then(response => {
+            if (response.data.status === 'success') {
+                addLogMessage('Conversation updated in backend', 'debug');
                 
-                axios.post('/save_conversation', {
-                    name: name
-                })
-                    .then(response => {
-                        addLogMessage(`Conversation saved as: ${name}`, 'debug');
-                        hideLoading();
-                        
-                        // Update saved conversations list
-                        getSavedConversations();
-                    })
-                    .catch(error => {
-                        console.error('Error saving conversation:', error);
-                        addLogMessage(`Error saving conversation: ${error.message}`, 'error');
-                        hideLoading();
+                // Try to refresh the NER and search results in case WebSockets failed
+                if (USE_DIRECT_FETCH || !socket.connected) {
+                    setTimeout(() => {
+                        fetchNERResultsDirectly();
+                        fetchSearchResultsDirectly();
+                    }, 1000);
+                }
+            } else {
+                addLogMessage(`Error updating conversation: ${response.data.message}`, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error updating conversation:', error);
+            addLogMessage(`Error updating conversation: ${error.message}`, 'error');
+            
+            // Send feedback about the error
+            sendFeedback(`Error updating conversation: ${error.message}`, 'error');
+        });
+}
+
+// Fix 5: Add troubleshooting button to UI
+function addTroubleshootButton() {
+    const troubleshootBtn = document.createElement('button');
+    troubleshootBtn.id = 'troubleshootBtn';
+    troubleshootBtn.className = 'btn btn-warning ms-2';
+    troubleshootBtn.innerHTML = '<i class="bi bi-wrench"></i> Troubleshoot';
+    troubleshootBtn.addEventListener('click', troubleshootConnection);
+    
+    // Add after save button
+    document.getElementById('saveConversationBtn').parentNode.appendChild(troubleshootBtn);
+}
+function saveConversation(name) {
+    showLoading('Saving conversation...', 'This will create JSON files');
+    
+    // First check if server is responsive
+    checkServerHealth()
+        .then(isHealthy => {
+            if (isHealthy) {
+                // Use the ensureSaveCompletes function that has a fallback mechanism
+                ensureSaveCompletes(name);
+            } else {
+                // If server is not healthy, try direct UI-based save
+                console.warn('Server appears unhealthy, attempting client-side backup');
+                addLogMessage('Server health check failed, attempting client-side backup', 'warning');
+                
+                try {
+                    const conversation = getConversationFromUI();
+                    const backupData = {
+                        name: name,
+                        timestamp: new Date().toISOString(),
+                        conversation: conversation
+                    };
+                    
+                    // Save to localStorage as backup
+                    const backups = JSON.parse(localStorage.getItem('conversation_backups') || '[]');
+                    backups.push(backupData);
+                    localStorage.setItem('conversation_backups', JSON.stringify(backups));
+                    
+                    addLogMessage('Conversation backed up to browser storage', 'debug');
+                    alert('Server appears to be unresponsive. Your conversation has been backed up to browser storage as a precaution.');
+                    
+                    // Try server save anyway
+                    ensureSaveCompletes(name);
+                } catch (error) {
+                    console.error('Error creating client-side backup:', error);
+                    addLogMessage(`Error creating client-side backup: ${error.message}`, 'error');
+                    
+                    // Still try server save
+                    ensureSaveCompletes(name);
+                }
+            }
+        });
+}
+function restoreBackups() {
+    try {
+        const backups = JSON.parse(localStorage.getItem('conversation_backups') || '[]');
+        
+        if (backups.length === 0) {
+            addLogMessage('No local backups found', 'debug');
+            return;
+        }
+        
+        addLogMessage(`Found ${backups.length} local backups`, 'debug');
+        
+        // Create backup display
+        const backupContainer = document.createElement('div');
+        backupContainer.className = 'backup-container mt-3 mb-3';
+        backupContainer.innerHTML = `
+            <div class="alert alert-info">
+                <h5>Local Backups Found</h5>
+                <p>Found ${backups.length} conversation backups in browser storage.</p>
+                <div class="backup-list">
+                    ${backups.map((backup, index) => `
+                        <div class="backup-item border p-2 mb-2 rounded">
+                            <div><strong>${backup.name}</strong> - ${new Date(backup.timestamp).toLocaleString()}</div>
+                            <div>Messages: ${backup.conversation.length}</div>
+                            <button class="btn btn-sm btn-primary restore-backup-btn" data-index="${index}">Restore</button>
+                            <button class="btn btn-sm btn-outline-danger delete-backup-btn" data-index="${index}">Delete</button>
+                        </div>
+                    `).join('')}
+                </div>
+                <button class="btn btn-sm btn-secondary clear-all-backups-btn">Clear All Backups</button>
+            </div>
+        `;
+        
+        // Add to page
+        document.querySelector('.card:first-of-type .card-body').appendChild(backupContainer);
+        
+        // Add event listeners
+        document.querySelectorAll('.restore-backup-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const index = parseInt(btn.getAttribute('data-index'));
+                const backup = backups[index];
+                
+                // Confirm restore
+                if (confirm(`Restore conversation "${backup.name}" from ${new Date(backup.timestamp).toLocaleString()}?`)) {
+                    // Clear current conversation UI
+                    conversationBox.querySelector('.message-container').innerHTML = '';
+                    
+                    // Add messages to UI
+                    backup.conversation.forEach(msg => {
+                        addMessageToUI(msg.role, msg.content);
                     });
+                    
+                    addLogMessage(`Restored conversation from local backup: ${backup.name}`, 'debug');
+                    
+                    // Update step based on conversation length
+                    if (backup.conversation.length > 0) {
+                        // If we have messages, we're at least at step 4
+                        setActiveStep(4);
+                        
+                        // If the last message is from the assistant, we're at step 5
+                        if (backup.conversation[backup.conversation.length - 1].role === 'assistant') {
+                            setActiveStep(5);
+                        }
+                    }
+                    
+                    // Try to save backup to server
+                    showLoading('Saving restored conversation...', 'Sending to server');
+                    
+                    axios.post('/save_conversation_direct', {
+                        name: `${backup.name}_restored`,
+                        conversation_id: conversationId,
+                        conversation: backup.conversation
+                    })
+                        .then(response => {
+                            if (response.data.status === 'success') {
+                                addLogMessage(`Backup saved to server as: ${backup.name}_restored`, 'debug');
+                            } else {
+                                addLogMessage(`Error saving backup to server: ${response.data.message}`, 'error');
+                            }
+                            hideLoading();
+                        })
+                        .catch(error => {
+                            console.error('Error saving backup to server:', error);
+                            addLogMessage(`Error saving backup to server: ${error.message}`, 'error');
+                            hideLoading();
+                        });
+                }
+            });
+        });
+        
+        document.querySelectorAll('.delete-backup-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const index = parseInt(btn.getAttribute('data-index'));
+                
+                // Confirm delete
+                if (confirm('Delete this backup? This cannot be undone.')) {
+                    backups.splice(index, 1);
+                    localStorage.setItem('conversation_backups', JSON.stringify(backups));
+                    
+                    // Refresh display
+                    backupContainer.remove();
+                    restoreBackups();
+                    
+                    addLogMessage('Deleted local backup', 'debug');
+                }
+            });
+        });
+        
+        document.querySelector('.clear-all-backups-btn').addEventListener('click', () => {
+            // Confirm clear all
+            if (confirm('Clear all local backups? This cannot be undone.')) {
+                localStorage.removeItem('conversation_backups');
+                backupContainer.remove();
+                
+                addLogMessage('Cleared all local backups', 'debug');
+            }
+        });
+    } catch (error) {
+        console.error('Error handling backups:', error);
+        addLogMessage(`Error handling backups: ${error.message}`, 'error');
+    }
+}
+
+// Fix 15: Add a periodic check for missing data
+function setupPeriodicDataChecks() {
+    // Check every 30 seconds for missing data
+    setInterval(() => {
+        // Only run if we're past step 1
+        if (currentStep > 1 && conversationId) {
+            // Check if important data is missing
+            const nerUpdated = nerResults.dataset.lastUpdated || 0;
+            const searchUpdated = searchResults.dataset.lastUpdated || 0;
+            const timeNow = Date.now();
+            
+            // If NER or search results are missing and haven't been updated recently
+            if ((nerResults.innerHTML.includes('No NER results available yet') ||
+                 searchResults.innerHTML.includes('No search results available yet')) &&
+                (timeNow - nerUpdated > 60000 && timeNow - searchUpdated > 60000)) {
+                
+                addLogMessage('Detected missing data, fetching directly', 'debug');
+                
+                // Fetch missing data
+                if (nerResults.innerHTML.includes('No NER results available yet')) {
+                    fetchNERResultsDirectly();
+                }
+                
+                if (searchResults.innerHTML.includes('No search results available yet')) {
+                    fetchSearchResultsDirectly();
+                }
+            }
+        }
+    }, 30000);
+}
+
+// Fix 16: Add session recovery mechanism
+function checkSessionStatus() {
+    if (conversationId) {
+        axios.get(`/get_session_data?conversation_id=${conversationId}`)
+            .then(response => {
+                const data = response.data;
+                
+                if (data.status === 'error' && data.message.includes('Conversation ID mismatch')) {
+                    addLogMessage('Session mismatch detected, attempting recovery', 'warning');
+                    
+                    // Try to restore session
+                    axios.post('/restore_session', {
+                        conversation_id: conversationId
+                    })
+                        .then(restoreResponse => {
+                            if (restoreResponse.data.status === 'success') {
+                                addLogMessage('Session restored successfully', 'debug');
+                                
+                                // Update UI with recovered data
+                                updateUI();
+                            } else {
+                                addLogMessage(`Session restore failed: ${restoreResponse.data.message}`, 'error');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error restoring session:', error);
+                            addLogMessage(`Error restoring session: ${error.message}`, 'error');
+                        });
+                }
+            })
+            .catch(error => {
+                console.error('Error checking session status:', error);
+                addLogMessage(`Error checking session status: ${error.message}`, 'error');
+            });
+    }
+}
+
+// Fix 17: Add enhanced socket connection management
+function enhanceSocketConnection() {
+    // Add more robust connection management
+    socket.io.on('reconnect_attempt', attempt => {
+        console.log(`Socket.IO reconnection attempt #${attempt}`);
+        addLogMessage(`Socket.IO reconnection attempt #${attempt}`, 'debug');
+    });
+    
+    socket.io.on('reconnect', attemptNumber => {
+        console.log(`Socket.IO reconnected after ${attemptNumber} attempts`);
+        addLogMessage(`Socket.IO reconnected after ${attemptNumber} attempts! 🟢`, 'debug');
+        
+        // Refresh data after reconnection
+        if (conversationId) {
+            setTimeout(() => {
+                updateUI();
+            }, 1000);
+        }
+    });
+    
+    socket.io.on('reconnect_error', error => {
+        console.error('Socket.IO reconnection error:', error);
+        addLogMessage(`Socket.IO reconnection error: ${error.message}`, 'error');
+    });
+    
+    socket.io.on('reconnect_failed', () => {
+        console.error('Socket.IO reconnection failed');
+        addLogMessage('Socket.IO reconnection failed after all attempts 🔴', 'error');
+        
+        // Alert user
+        alert('Real-time updates are not working. The application will continue to function, but you may need to refresh the page manually to see updates.');
+    });
+}
+
+function troubleshootConnection() {
+    // Show a loading indicator
+    showLoading('Troubleshooting connections...', 'Testing WebSockets and APIs');
+    
+    // Add a test event listener
+    const testHandler = (data) => {
+        console.log('Received test event:', data);
+        addLogMessage(`Received test event: ${JSON.stringify(data)}`, 'debug');
+    };
+    socket.on('test_event', testHandler);
+    
+    // Check socket connection
+    checkWebSocketConnection();
+    
+    // Fetch data directly to test HTTP endpoints
+    fetchNERResultsDirectly();
+    fetchSearchResultsDirectly();
+    
+    // Debug conversation data
+    debugConversation();
+    
+    // Remove the test handler after 5 seconds
+    setTimeout(() => {
+        socket.off('test_event', testHandler);
+        hideLoading();
+        
+        // Show summary
+        const connectionStatus = socket.connected ? 'Connected' : 'Disconnected';
+        addLogMessage(`Troubleshooting complete. WebSocket: ${connectionStatus}`, 'debug');
+        
+        // Offer reconnection options if disconnected
+        if (!socket.connected) {
+            if (confirm('WebSocket appears to be disconnected. Would you like to reload the page to attempt reconnection?')) {
+                location.reload();
+            }
+        }
+    }, 5000);
+}
+
+// Fix 6: Add a better "Next" button handler with error recovery
+function handleNextButtonClick() {
+    if (currentStep === 5) {
+        // First try to fetch any missing data
+        if (nerResults.innerHTML.includes('No NER results available yet')) {
+            fetchNERResultsDirectly();
+        }
+        
+        if (searchResults.innerHTML.includes('No search results available yet')) {
+            fetchSearchResultsDirectly();
+        }
+        
+        // Generate next user message and go back to step 4
+        generateNextUserMessage();
+    }
+}
+
+            
+            function saveConversation(name) {
+    showLoading('Saving conversation...', 'This will create JSON files');
+    
+    axios.post('/save_conversation', {
+        name: name,
+        conversation_id: conversationId
+    })
+        .then(response => {
+            if (response.data.status === 'success') {
+                addLogMessage(`Conversation saved as: ${name}`, 'debug');
+                // Update saved conversations list
+                getSavedConversations();
+            } else {
+                addLogMessage(`Error saving conversation: ${response.data.message}`, 'error');
+                alert(`Failed to save conversation: ${response.data.message}`);
+            }
+            hideLoading();
+        })
+        .catch(error => {
+            console.error('Error saving conversation:', error);
+            addLogMessage(`Error saving conversation: ${error.message}`, 'error');
+            alert('Failed to save conversation. Check logs for details.');
+            hideLoading();
+        });
+}
+
+// Fix 7: Improve the updateUI function to handle errors
+function updateUI() {
+    // Check if session data is intact
+    axios.get('/get_session_data')
+        .then(response => {
+            const sessionData = response.data.session_data;
+            
+            if (sessionData && sessionData.conversation_id === conversationId) {
+                // Session is intact, check for missing UI elements
+                
+                // If persona is missing but session has it
+                if (personaDisplay.innerHTML.includes('No persona generated yet') && sessionData.has_persona) {
+                    fetchPersonaData();
+                }
+                
+                // If conversation should exist but UI is empty
+                if (sessionData.conversation_length > 0 && 
+                    conversationBox.querySelector('.message-container').children.length === 0) {
+                    // Reload conversation
+                    reloadConversationFromBackend();
+                }
+                
+                // Check NER and search results
+                if (nerResults.innerHTML.includes('No NER results available yet')) {
+                    fetchNERResultsDirectly();
+                }
+                
+                if (searchResults.innerHTML.includes('No search results available yet')) {
+                    fetchSearchResultsDirectly();
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error checking session data:', error);
+            addLogMessage(`Error checking session data: ${error.message}`, 'error');
+        });
+}
+
+// Fix 8: Add function to reload conversation from backend
+function reloadConversationFromBackend() {
+    // Show loading
+    showLoading('Reloading conversation...', 'Retrieving from server');
+    
+    axios.post('/get_conversation', {
+        conversation_id: conversationId
+    })
+        .then(response => {
+            if (response.data.status === 'success' && response.data.conversation) {
+                // Clear existing conversation
+                conversationBox.querySelector('.message-container').innerHTML = '';
+                
+                // Add messages to UI
+                const conversation = response.data.conversation;
+                conversation.forEach(msg => {
+                    addMessageToUI(msg.role, msg.content);
+                });
+                
+                addLogMessage(`Successfully reloaded conversation with ${conversation.length} messages`, 'debug');
+                
+                // Update step based on conversation length
+                if (conversation.length > 0) {
+                    // If we have messages, we're at least at step 4
+                    setActiveStep(4);
+                    
+                    // If the last message is from the assistant, we're at step 5
+                    if (conversation[conversation.length - 1].role === 'assistant') {
+                        setActiveStep(5);
+                    }
+                }
+            } else {
+                addLogMessage(`Failed to reload conversation: ${response.data.message}`, 'error');
             }
             
-            // Get saved conversations
+            hideLoading();
+        })
+        .catch(error => {
+            console.error('Error reloading conversation:', error);
+            addLogMessage(`Error reloading conversation: ${error.message}`, 'error');
+            hideLoading();
+        });
+}
+
+// Fix 9: Add a save fallback mechanism
+function ensureSaveCompletes(name) {
+    // Start a timer
+    const saveTimeout = setTimeout(() => {
+        // If we're still waiting after 10 seconds, try direct file saving
+        addLogMessage('Save operation taking longer than expected, trying fallback...', 'warning');
+        
+        // Use a custom endpoint for direct file saving
+        axios.post('/save_conversation_direct', {
+            name: name,
+            conversation_id: conversationId,
+            conversation: getConversationFromUI()  // Get conversation directly from UI
+        })
+            .then(response => {
+                if (response.data.status === 'success') {
+                    addLogMessage(`Conversation saved as: ${name} (fallback method)`, 'debug');
+                    getSavedConversations();
+                } else {
+                    addLogMessage(`Error in fallback save: ${response.data.message}`, 'error');
+                    alert(`Failed to save conversation. Please try again.`);
+                }
+                hideLoading();
+            })
+            .catch(error => {
+                console.error('Error in fallback save:', error);
+                addLogMessage(`Error in fallback save: ${error.message}`, 'error');
+                alert('Failed to save conversation. Please try again.');
+                hideLoading();
+            });
+    }, 10000);
+    
+    // Regular save function
+    axios.post('/save_conversation', {
+        name: name,
+        conversation_id: conversationId
+    })
+        .then(response => {
+            // Clear the timeout since save completed
+            clearTimeout(saveTimeout);
+            
+            if (response.data.status === 'success') {
+                addLogMessage(`Conversation saved as: ${name}`, 'debug');
+                getSavedConversations();
+            } else {
+                addLogMessage(`Error saving conversation: ${response.data.message}`, 'error');
+                // Don't hide loading - let the fallback handle it
+                return;
+            }
+            hideLoading();
+        })
+        .catch(error => {
+            // Don't clear timeout - let the fallback handle it
+            console.error('Error saving conversation:', error);
+            addLogMessage(`Error saving conversation: ${error.message}`, 'error');
+            // Don't hide loading - let the fallback handle it
+        });
+}
+
+function checkServerHealth() {
+    return new Promise((resolve, reject) => {
+        axios.get('/debug')
+            .then(response => {
+                if (response.data && response.data.status === 'success') {
+                    resolve(true);
+                } else {
+                    resolve(false);
+                }
+            })
+            .catch(error => {
+                console.error('Server health check failed:', error);
+                resolve(false);
+            });
+    });
+}
+            
             function getSavedConversations() {
                 axios.get('/get_saved_conversations')
                     .then(response => {
@@ -1116,7 +1703,6 @@ function fetchPersonaData() {
                     });
             }
             
-            // Regenerate assistant response
             function regenerateAssistantResponse() {
                 showLoading('Regenerating assistant response...', 'This may take a minute or two');
                 
@@ -1125,8 +1711,6 @@ function fetchPersonaData() {
                 })
                     .then(response => {
                         currentTaskId = response.data.task_id;
-                        
-                        // Poll for task completion
                         pollTaskCompletion(currentTaskId, 'Regenerating assistant response...', 'This may take a minute or two');
                     })
                     .catch(error => {
@@ -1136,7 +1720,6 @@ function fetchPersonaData() {
                     });
             }
             
-            // Clear conversation
             function clearConversation() {
                 if (!confirm('Are you sure you want to clear the current conversation? This will keep the persona and requirements.')) {
                     return;
@@ -1146,22 +1729,17 @@ function fetchPersonaData() {
                 
                 axios.post('/clear_conversation')
                     .then(() => {
-                        // Clear conversation UI
                         conversationBox.querySelector('.message-container').innerHTML = '';
-                        
-                        // Clear data displays
                         nerResults.innerHTML = '<span class="text-muted">No NER results available yet.</span>';
                         searchCall.innerHTML = '<span class="text-muted">No search call available yet.</span>';
                         searchResults.innerHTML = '<span class="text-muted">No search results available yet.</span>';
                         critique.innerHTML = '<span class="text-muted">No critique available yet.</span>';
                         
-                        // Set step back to 3
                         setActiveStep(3);
                         
                         hideLoading();
                         addLogMessage('Conversation cleared', 'debug');
                         
-                        // Generate initial user message again
                         generateInitialUserMessage(requirementsDisplay.querySelector('pre').textContent);
                     })
                     .catch(error => {
@@ -1171,7 +1749,6 @@ function fetchPersonaData() {
                     });
             }
             
-            // Reset everything
             function resetEverything() {
                 if (!confirm('Are you sure you want to reset everything? This will start from scratch.')) {
                     return;
@@ -1181,7 +1758,6 @@ function fetchPersonaData() {
                 
                 axios.post('/reset')
                     .then(() => {
-                        // Clear all UI elements
                         conversationBox.querySelector('.message-container').innerHTML = '';
                         personaDisplay.innerHTML = '<span class="text-muted">No persona generated yet.</span>';
                         requirementsDisplay.innerHTML = '<span class="text-muted">No requirements generated yet.</span>';
@@ -1190,13 +1766,10 @@ function fetchPersonaData() {
                         searchResults.innerHTML = '<span class="text-muted">No search results available yet.</span>';
                         critique.innerHTML = '<span class="text-muted">No critique available yet.</span>';
                         
-                        // Reset step
                         setActiveStep(1);
                         
-                        // Reset conversation ID
                         conversationId = null;
                         
-                        // Disable buttons
                         nextBtn.disabled = true;
                         clearBtn.disabled = true;
                         regenerateBtn.disabled = true;
@@ -1212,14 +1785,12 @@ function fetchPersonaData() {
                     });
             }
             
-            // Button event listeners
             startBtn.addEventListener('click', () => {
                 initConversation();
             });
             
             nextBtn.addEventListener('click', () => {
                 if (currentStep === 5) {
-                    // If we're at step 5, generate next user message and go back to step 4
                     generateNextUserMessage();
                 }
             });
@@ -1246,7 +1817,6 @@ function fetchPersonaData() {
                 saveConversationModal.hide();
             });
             
-            // Initialize
             getSavedConversations();
         });
     </script>
