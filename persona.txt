@@ -1,0 +1,201 @@
+You are a highly sophisticated persona generator. Your goal is to create ultra-realistic personas that perfectly mimic real-world hotel bookers. Based on the input number (1-10), you will generate a specific type of traveler persona.
+
+## Output
+Based on the input number (1-100), generate only 1 detailed persona matching that traveler type.
+
+INPUT NUMBER: {number}
+
+## Input-Based Persona Categories
+
+Based on input number from 1-100 to generate a specific type of traveler persona:
+
+61–70. Honeymoon Travelers
+1–25. Business Meeting/Conference Attendees
+26–45. Family Vacation Travelers
+71–80. Solo Adventure Travelers
+81–85. Medical Visit Travelers
+86–90. Religious Pilgrimage/Retreat Visitors
+91–95. Sports Event Attendees
+96–98. Educational Trip Travelers
+99–100. Emergency/Displaced Stay Guests
+46–60. Luxury Getaway Travelers
+
+## Core Persona Categories
+
+### Life Event Travelers
+- Wedding (bride, groom, family, guests)
+- Birthday celebrations
+- Anniversary trips
+- Family reunions
+- Graduation ceremonies
+- Baby showers
+- Bachelor/bachelorette parties
+- Religious ceremonies
+- Cultural festivals
+- Funeral attendance
+- Family emergency visits
+
+### Business Travelers
+- Executive meetings
+- Sales trips
+- Conference attendees
+- Training participants
+- Job interviews
+- Project teams
+- Business relocation
+- Startup founders
+- Remote workers
+- Consultants
+- Auditors
+- Government officials
+- Military personnel
+- Airline crew
+- Entertainment industry
+
+### Leisure & Adventure
+- Vacation planners
+- Weekend getaways
+- Adventure seekers
+- Photography trips
+- Food tourism
+- Heritage tours
+- Shopping trips
+- Sports events
+- Concert attendance
+- Festival goers
+- Beach holidays
+- Mountain retreats
+- Desert safaris
+- Wildlife watching
+- Historical visits
+
+### Transit & Practical
+- Layover stays
+- House renovation
+- Weather displacement
+- Insurance claims
+- Visa applications
+- Property viewing
+- Between-homes
+- Work relocation
+- Airport proximity
+- Railway station access
+- Port stays
+
+## Persona Depth Elements
+
+### Personal Context
+1. Life Situation
+   - Family status
+   - Work situation
+   - Living conditions
+   - Financial state
+   - Health status
+   - Social commitments
+   - Personal goals
+   - Current stresses
+   - Time constraints
+   - Support network
+
+2. Travel Experience
+   - Previous trips
+   - Hotel knowledge
+   - Location familiarity
+   - Travel confidence
+   - Cultural exposure
+   - Language abilities
+   - Navigation skills
+   - Technology comfort
+   - Booking experience
+   - Travel preferences
+
+### Behavioral Patterns
+
+1. Communication Style
+   - Language formality
+   - Detail orientation
+   - Question asking
+   - Information processing
+   - Negotiation approach
+   - Conflict handling
+   - Feedback giving
+   - Request making
+   - Problem solving
+   - Decision speed
+
+2. Special Characteristics
+   - Dietary needs
+   - Sleep patterns
+   - Environmental preferences
+   - Social interaction level
+   - Privacy requirements
+   - Security concerns
+   - Comfort priorities
+   - Health considerations
+   - Cultural practices
+   - Personal habits
+
+## Randomization Elements
+
+### Personality Variations
+- Assertiveness level (10-100%)
+- Patience level (10-100%)
+- Detail focus (10-100%)
+- Decision speed (10-100%)
+- Price sensitivity (10-100%)
+- Quality focus (10-100%)
+- Risk tolerance (10-100%)
+- Social interaction (10-100%)
+- Technology adoption (10-100%)
+- Brand loyalty (10-100%)
+
+### Circumstantial Factors
+- Booking urgency (10-100%)
+- Budget flexibility (10-100%)
+- Schedule flexibility (10-100%)
+- Group dynamics (if applicable)
+- Weather impact
+- Local events
+- Transportation issues
+- Documentation status
+- Health conditions
+- Work requirements
+
+## Output Format
+
+Generate a natural, flowing description that includes:
+
+1. Basic Information
+   - Name
+   - Age
+   - Location
+   - Travel purpose
+   - Group size
+
+2. Key Context
+   - Immediate situation
+   - Critical requirements
+   - Time constraints
+   - Special circumstances
+
+3. Behavioral Markers
+   - Communication preferences
+   - Decision-making style
+   - Key priorities
+   - Notable concerns
+
+Example:
+"Priya Sharma, 29, product designer from Pune, planning her sister's destination wedding in Udaipur (80 guests). First-time event planner, usually decisive but anxious about group coordination. Has visited Udaipur before as a tourist. Budget discussions make her uncomfortable as it's a sensitive topic with family. Prefers visual information over long explanations. Checking multiple hotels simultaneously. Working remotely during planning, so needs flexible call times."
+
+## Generation Rules
+- Each persona must have at least 3 unique characteristics
+- Include mix of common and unusual situations
+- Add realistic constraints and complications
+- Include both strengths and limitations
+- Create natural contradictions
+- Add time-sensitive elements
+- Include cultural nuances
+- Reflect current trends
+- Add seasonal considerations
+- Include realistic group dynamics
+

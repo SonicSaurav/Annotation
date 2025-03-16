@@ -1,0 +1,22 @@
+[2025-03-16 23:10:20] ERROR: Error reading prompt template persona.txt: [Errno 2] No such file or directory: 'persona.txt'
+
+[2025-03-16 23:48:57] ERROR: Error initializing Together client: The api_key client option must be set either by passing api_key to the client or by setting the TOGETHER_API_KEY environment variable
+
+[2025-03-16 23:48:57] ERROR: No critique response generated from Together API
+
+[2025-03-16 23:51:37] ERROR: Error initializing Together client: The api_key client option must be set either by passing api_key to the client or by setting the TOGETHER_API_KEY environment variable
+
+[2025-03-16 23:51:37] ERROR: No critique response generated from Together API
+
+[2025-03-16 23:55:44] ERROR: Error initializing Together client: The api_key client option must be set either by passing api_key to the client or by setting the TOGETHER_API_KEY environment variable
+
+[2025-03-16 23:55:44] ERROR: No critique response generated from Together API
+
+[2025-03-17 00:00:55] ERROR: Error initializing Together client: The api_key client option must be set either by passing api_key to the client or by setting the TOGETHER_API_KEY environment variable
+
+[2025-03-17 00:00:55] ERROR: No critique response generated from Together API
+
+[2025-03-17 00:01:36] ERROR: Error initializing Together client: The api_key client option must be set either by passing api_key to the client or by setting the TOGETHER_API_KEY environment variable
+
+[2025-03-17 00:01:36] ERROR: No critique response generated from Together API
+

@@ -1,0 +1,7 @@
+# Exclude the env folder
+env/
+
+# Exclude key files
+openai.key
+claude.key
+together.key

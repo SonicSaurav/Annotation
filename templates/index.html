@@ -1,0 +1,1254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversation Data Annotation Tool</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f8f9fa;
+        }
+        .container-fluid {
+            padding: 20px;
+        }
+        .card {
+            margin-bottom: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .card-header {
+            background-color: #f1f3f5;
+            font-weight: bold;
+            border-radius: 10px 10px 0 0 !important;
+        }
+        .conversation-box {
+            height: 400px;
+            overflow-y: auto;
+            padding: 15px;
+            background-color: #ffffff;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+        }
+        .user-message {
+            background-color: #e9ecef;
+            padding: 10px 15px;
+            border-radius: 15px;
+            margin-bottom: 10px;
+            max-width: 80%;
+            align-self: flex-start;
+        }
+        .assistant-message {
+            background-color: #d0e8ff;
+            padding: 10px 15px;
+            border-radius: 15px;
+            margin-bottom: 10px;
+            max-width: 80%;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+        .message-container {
+            display: flex;
+            flex-direction: column;
+        }
+        .code-block {
+            font-family: monospace;
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 5px solid #3498db;
+            width: 30px;
+            height: 30px;
+            animation: spin 2s linear infinite;
+            display: inline-block;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .workflow-steps {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .workflow-step {
+            flex: 1;
+            text-align: center;
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 5px;
+            position: relative;
+        }
+        .workflow-step.active {
+            background-color: #cfe2ff;
+            font-weight: bold;
+        }
+        .workflow-step.completed {
+            background-color: #d1e7dd;
+        }
+        .workflow-step:not(:last-child)::after {
+            content: "→";
+            position: absolute;
+            right: -10px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        .log-message {
+            font-family: monospace;
+            padding: 5px;
+            margin: 2px 0;
+            border-radius: 3px;
+        }
+        .log-message.debug {
+            color: #0d6efd;
+            background-color: #e6f2ff;
+        }
+        .log-message.error {
+            color: #dc3545;
+            background-color: #f8d7da;
+        }
+        .log-message.warning {
+            color: #ffc107;
+            background-color: #fff3cd;
+        }
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #dee2e6;
+            margin-bottom: 15px;
+        }
+        .tab {
+            padding: 10px 15px;
+            cursor: pointer;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-bottom: none;
+            border-radius: 5px 5px 0 0;
+            margin-right: 5px;
+        }
+        .tab.active {
+            background-color: #ffffff;
+            border-bottom: 1px solid #ffffff;
+            margin-bottom: -1px;
+            font-weight: bold;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">Conversation Data Annotation Tool</a>
+            <div class="d-flex">
+                <button id="saveConversationBtn" class="btn btn-success me-2" disabled>
+                    <i class="bi bi-save"></i> Save Conversation
+                </button>
+                <button id="resetBtn" class="btn btn-danger">
+                    <i class="bi bi-arrow-counterclockwise"></i> Reset
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Left Column: Workflow Steps & Conversation Display -->
+            <div class="col-lg-6">
+                <!-- Workflow Steps -->
+                <div class="card">
+                    <div class="card-header">Workflow Steps</div>
+                    <div class="card-body">
+                        <div class="workflow-steps">
+                            <div id="step1" class="workflow-step active">
+                                1. Generate Persona
+                            </div>
+                            <div id="step2" class="workflow-step">
+                                2. Generate Requirements
+                            </div>
+                            <div id="step3" class="workflow-step">
+                                3. Initial User Message
+                            </div>
+                            <div id="step4" class="workflow-step">
+                                4. Process Response
+                            </div>
+                            <div id="step5" class="workflow-step">
+                                5. Next User Message
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <button id="startBtn" class="btn btn-primary">
+                                <i class="bi bi-play-fill"></i> Start Workflow
+                            </button>
+                            <div>
+                                <button id="clearBtn" class="btn btn-warning me-2" disabled>
+                                    <i class="bi bi-trash"></i> Clear
+                                </button>
+                                <button id="nextBtn" class="btn btn-success" disabled>
+                                    <i class="bi bi-arrow-right"></i> Next
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Conversation Display -->
+                <div class="card">
+                    <div class="card-header">Conversation</div>
+                    <div class="card-body">
+                        <div id="conversationBox" class="conversation-box">
+                            <div class="message-container">
+                                <!-- Messages will be appended here -->
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <button id="regenerateBtn" class="btn btn-warning" disabled>
+                                <i class="bi bi-arrow-repeat"></i> Regenerate Assistant Response
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Saved Conversations -->
+                <div class="card">
+                    <div class="card-header">Saved Conversations</div>
+                    <div class="card-body">
+                        <div id="savedConversationsList">
+                            <!-- Saved conversations will be listed here -->
+                            <p class="text-muted">No conversations saved yet.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Data Displays -->
+            <div class="col-lg-6">
+                <!-- Tabs for Data Display -->
+                <div class="card">
+                    <div class="card-header">Data Analysis</div>
+                    <div class="card-body">
+                        <div class="tabs">
+                            <div class="tab active" data-tab="ner">NER Results</div>
+                            <div class="tab" data-tab="searchCall">Search Call</div>
+                            <div class="tab" data-tab="searchResults">Search Results</div>
+                            <div class="tab" data-tab="critique">Critique</div>
+                            <div class="tab" data-tab="logs">Logs</div>
+                        </div>
+
+                        <!-- NER Results Tab -->
+                        <div id="nerTab" class="tab-content active">
+                            <h5>Named Entity Recognition Results</h5>
+                            <div id="nerResults" class="code-block">
+                                <span class="text-muted">No NER results available yet.</span>
+                            </div>
+                        </div>
+
+                        <!-- Search Call Tab -->
+                        <div id="searchCallTab" class="tab-content">
+                            <h5>Search Call</h5>
+                            <div id="searchCall" class="code-block">
+                                <span class="text-muted">No search call available yet.</span>
+                            </div>
+                        </div>
+
+                        <!-- Search Results Tab -->
+                        <div id="searchResultsTab" class="tab-content">
+                            <h5>Search Results</h5>
+                            <div id="searchResults" class="code-block">
+                                <span class="text-muted">No search results available yet.</span>
+                            </div>
+                        </div>
+
+                        <!-- Critique Tab -->
+                        <div id="critiqueTab" class="tab-content">
+                            <h5>Response Critique</h5>
+                            <div id="critique" class="code-block">
+                                <span class="text-muted">No critique available yet.</span>
+                            </div>
+                        </div>
+
+                        <!-- Logs Tab -->
+                        <div id="logsTab" class="tab-content">
+                            <h5>Real-time Logs</h5>
+                            <div id="logs" class="code-block" style="height: 300px; overflow-y: auto;">
+                                <div class="log-message debug">System initialized. Waiting for actions...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Contextual Information -->
+                <div class="card">
+                    <div class="card-header">Contextual Information</div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <h5>Persona</h5>
+                            <div id="personaDisplay" class="code-block">
+                                <span class="text-muted">No persona generated yet.</span>
+                            </div>
+                        </div>
+                        <div>
+                            <h5>Requirements</h5>
+                            <div id="requirementsDisplay" class="code-block">
+                                <span class="text-muted">No requirements generated yet.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for saving conversation -->
+    <div class="modal fade" id="saveConversationModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Save Conversation</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="conversationName" class="form-label">Conversation Name</label>
+                        <input type="text" class="form-control" id="conversationName" placeholder="Enter a name for this conversation">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="saveConversationModalBtn">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Modal -->
+    <div class="modal fade" id="loadingModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body text-center p-4">
+                    <div class="loader mx-auto mb-3"></div>
+                    <h5 id="loadingMessage">Processing...</h5>
+                    <p class="text-muted" id="loadingSubMessage">This may take a few moments</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/socket.io/client-dist/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // DOM Elements
+            const startBtn = document.getElementById('startBtn');
+            const nextBtn = document.getElementById('nextBtn');
+            const clearBtn = document.getElementById('clearBtn');
+            const resetBtn = document.getElementById('resetBtn');
+            const regenerateBtn = document.getElementById('regenerateBtn');
+            const saveConversationBtn = document.getElementById('saveConversationBtn');
+            const saveConversationModalBtn = document.getElementById('saveConversationModalBtn');
+            
+            const conversationBox = document.getElementById('conversationBox');
+            const nerResults = document.getElementById('nerResults');
+            const searchCall = document.getElementById('searchCall');
+            const searchResults = document.getElementById('searchResults');
+            const critique = document.getElementById('critique');
+            const logs = document.getElementById('logs');
+            const personaDisplay = document.getElementById('personaDisplay');
+            const requirementsDisplay = document.getElementById('requirementsDisplay');
+            const savedConversationsList = document.getElementById('savedConversationsList');
+            
+            // Workflow steps
+            const steps = {
+                step1: document.getElementById('step1'),
+                step2: document.getElementById('step2'),
+                step3: document.getElementById('step3'),
+                step4: document.getElementById('step4'),
+                step5: document.getElementById('step5')
+            };
+            
+            // State variables
+            let currentStep = 1;
+            let conversationId = null;
+            let currentTaskId = null;
+            
+            // Modals
+            const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
+            const saveConversationModal = new bootstrap.Modal(document.getElementById('saveConversationModal'));
+            
+            // Tab functionality
+            const tabs = document.querySelectorAll('.tab');
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    // Remove active class from all tabs
+                    tabs.forEach(t => t.classList.remove('active'));
+                    // Add active class to clicked tab
+                    tab.classList.add('active');
+                    
+                    // Hide all tab content
+                    const tabContents = document.querySelectorAll('.tab-content');
+                    tabContents.forEach(content => content.classList.remove('active'));
+                    
+                    // Show corresponding tab content
+                    const tabContentId = tab.getAttribute('data-tab') + 'Tab';
+                    document.getElementById(tabContentId).classList.add('active');
+                });
+            });
+            
+            // Show loading modal with custom message
+            function showLoading(message, subMessage = 'This may take a few moments') {
+                document.getElementById('loadingMessage').textContent = message;
+                document.getElementById('loadingSubMessage').textContent = subMessage;
+                loadingModal.show();
+            }
+            
+            // Hide loading modal
+            function hideLoading() {
+                loadingModal.hide();
+            }
+            
+            // Set active step
+            function setActiveStep(step) {
+                currentStep = step;
+                Object.values(steps).forEach((stepEl, index) => {
+                    stepEl.classList.remove('active', 'completed');
+                    if (index + 1 < step) {
+                        stepEl.classList.add('completed');
+                    } else if (index + 1 === step) {
+                        stepEl.classList.add('active');
+                    }
+                });
+                
+                // Enable/disable next button based on step
+                if (step > 1) {
+                    nextBtn.disabled = false;
+                    clearBtn.disabled = false;
+                    saveConversationBtn.disabled = false;
+                    
+                    // Only enable regenerate when we have an assistant response
+                    const conversation = getConversationFromUI();
+                    if (conversation.length > 0 && conversation[conversation.length - 1].role === 'assistant') {
+                        regenerateBtn.disabled = false;
+                    } else {
+                        regenerateBtn.disabled = true;
+                    }
+                }
+            }
+            
+            // Add message to conversation UI
+            function addMessageToUI(role, content) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = role === 'user' ? 'user-message' : 'assistant-message';
+                messageDiv.textContent = content;
+                conversationBox.querySelector('.message-container').appendChild(messageDiv);
+                conversationBox.scrollTop = conversationBox.scrollHeight;
+            }
+            
+            // Get conversation from UI
+            function getConversationFromUI() {
+                const messages = conversationBox.querySelectorAll('.message-container > div');
+                const conversation = [];
+                
+                messages.forEach(message => {
+                    const role = message.classList.contains('user-message') ? 'user' : 'assistant';
+                    conversation.push({
+                        role: role,
+                        content: message.textContent
+                    });
+                });
+                
+                return conversation;
+            }
+            
+            // Add log message to UI
+            function addLogMessage(message, type) {
+                const logMessage = document.createElement('div');
+                logMessage.className = `log-message ${type}`;
+                logMessage.textContent = message;
+                logs.appendChild(logMessage);
+                logs.scrollTop = logs.scrollHeight;
+            }
+            
+            // Socket.io connection with debug enabled
+            const socket = io({
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000
+            });
+            
+            // Socket connection event handlers for debugging
+            socket.on('connect', () => {
+                console.log('WebSocket connected!');
+                addLogMessage('WebSocket connected', 'debug');
+            });
+            
+            socket.on('connect_error', (error) => {
+                console.error('WebSocket connection error:', error);
+                addLogMessage(`WebSocket connection error: ${error.message}`, 'error');
+            });
+            
+            socket.on('disconnect', () => {
+                console.log('WebSocket disconnected');
+                addLogMessage('WebSocket disconnected', 'debug');
+            });
+            
+            socket.on('log_message', (data) => {
+                addLogMessage(data.message, data.type);
+            });
+            
+            socket.on('ner_extracted', (data) => {
+                if (data.conversation_id === conversationId) {
+                    nerResults.innerHTML = `<pre>${JSON.stringify(data.preferences, null, 2)}</pre>`;
+                    addLogMessage('NER extraction completed', 'debug');
+                }
+            });
+            
+            socket.on('search_call_processed', (data) => {
+                if (data.conversation_id === conversationId) {
+                    searchCall.innerHTML = `<pre>${data.search_call}</pre>`;
+                    addLogMessage('Search call processed', 'debug');
+                }
+            });
+            
+            socket.on('search_results', (data) => {
+                if (data.conversation_id === conversationId) {
+                    searchResults.innerHTML = `<pre>${JSON.stringify(data.record, null, 2)}</pre>`;
+                    addLogMessage('Search results received', 'debug');
+                }
+            });
+            
+            socket.on('critic_evaluation', (data) => {
+                if (data.conversation_id === conversationId) {
+                    critique.innerHTML = `<pre>${JSON.stringify(data.critique, null, 2)}</pre>`;
+                    addLogMessage('Critique evaluation completed', 'debug');
+                }
+            });
+            
+            socket.on('combined_critique', (data) => {
+                if (data.conversation_id === conversationId) {
+                    critique.innerHTML = `<pre>${JSON.stringify(data.critique, null, 2)}</pre>`;
+                    addLogMessage('Combined critique completed', 'debug');
+                }
+            });
+            
+            socket.on('model_response', (data) => {
+                console.log('Received model_response event:', data);
+                
+                if (data.conversation_id === conversationId) {
+                    addLogMessage(`Received ${data.model} response`, 'debug');
+                    
+                    if (data.model === 'openai_o3-mini') {
+                        // Handle different model responses based on current step
+                        if (currentStep === 1) {
+                            // Persona response
+                            personaDisplay.innerHTML = `<pre>${data.response}</pre>`;
+                            addLogMessage('Updated persona display', 'debug');
+                            
+                            // Move to next step - Generate requirements
+                            generateRequirements(data.response);
+                        } else if (currentStep === 2) {
+                            // Requirements response
+                            requirementsDisplay.innerHTML = `<pre>${data.response}</pre>`;
+                            addLogMessage('Updated requirements display', 'debug');
+                            
+                            // Move to next step - Generate initial user message
+                            generateInitialUserMessage(data.response);
+                        } else if (currentStep === 3 || currentStep === 5) {
+                            // User message response
+                            addMessageToUI('user', data.response);
+                            addLogMessage('Added user message to UI', 'debug');
+                            
+                            // Add to backend conversation
+                            addUserMessageToBackend(data.response);
+                        }
+                    }
+                } else {
+                    console.warn('Received model_response for different conversation_id', data.conversation_id);
+                }
+            });
+            
+            socket.on('model_response_processed', (data) => {
+                if (data.conversation_id === conversationId) {
+                    // Update the conversation with assistant response
+                    if (data.result && data.result.message) {
+                        addMessageToUI('assistant', data.result.message.content);
+                        
+                        // Update conversation in backend
+                        updateConversationInBackend(data.result);
+                        
+                        // Enable regenerate button
+                        regenerateBtn.disabled = false;
+                    }
+                    
+                    hideLoading();
+                    
+                    // If we're in step 4, move to step 5
+                    if (currentStep === 4) {
+                        setActiveStep(5);
+                    }
+                }
+            });
+            
+            // Function to check task status via API
+            function checkTaskStatus(taskId) {
+                return axios.get(`/task_status/${taskId}`)
+                    .then(response => {
+                        console.log(`Task ${taskId} status:`, response.data);
+                        return response.data;
+                    })
+                    .catch(error => {
+                        console.error(`Error checking task status for ${taskId}:`, error);
+                        return { state: 'ERROR', status: 'Error checking task status' };
+                    });
+            }
+            
+           // Updated pollTaskCompletion function to use direct result fetching
+function pollTaskCompletion(taskId, loadingMessage, subMessage = 'This may take a few moments') {
+    // Update loading message
+    document.getElementById('loadingMessage').textContent = loadingMessage;
+    document.getElementById('loadingSubMessage').textContent = subMessage;
+    
+    console.log(`Polling task ${taskId} with message: ${loadingMessage}`);
+    addLogMessage(`Polling task ${taskId}`, 'debug');
+    
+    // Store current task ID for later use
+    currentTaskId = taskId;
+    
+    // Check task status every 2 seconds
+    const interval = setInterval(() => {
+        checkTaskStatus(taskId).then(taskData => {
+            if (taskData.state === 'SUCCESS') {
+                clearInterval(interval);
+                addLogMessage(`Task ${taskId} completed successfully`, 'debug');
+                
+                // Wait a short period to see if WebSocket updates UI
+                setTimeout(() => {
+                    // If we're still showing loading for this task, assume WebSocket failed
+                    if (loadingModal._element.classList.contains('show') && 
+                        document.getElementById('loadingMessage').textContent === loadingMessage) {
+                        
+                        console.warn('Task completed but UI not updated. Using direct result fetch.');
+                        addLogMessage('Task completed but UI not updated. Using direct result fetch.', 'warning');
+                        
+                        // Use direct task result without storing
+                        fetchDirectTaskResult(taskId);
+                    }
+                }, 2000); // Wait 2 seconds for WebSocket update before fallback
+            }
+            else if (taskData.state === 'FAILURE') {
+                clearInterval(interval);
+                hideLoading();
+                addLogMessage(`Task ${taskId} failed: ${taskData.error || 'Unknown error'}`, 'error');
+                alert(`Task failed: ${taskData.error || 'Unknown error'}`);
+            }
+        });
+    }, 2000);
+    
+    // Clear interval after 60 seconds (failsafe)
+    setTimeout(() => {
+        clearInterval(interval);
+        
+        // If we're still showing the loading modal for this task
+        if (loadingModal._element.classList.contains('show') && 
+            document.getElementById('loadingMessage').textContent === loadingMessage) {
+            
+            console.warn(`Timeout reached for task ${taskId}. Using direct result fetch.`);
+            addLogMessage(`Timeout reached for task ${taskId}. Using direct result fetch.`, 'warning');
+            
+            // Try one last time to get the result directly
+            fetchDirectTaskResult(taskId);
+        }
+    }, 60000);
+}
+            
+function handleTaskCompletionFallback(taskId, taskData) {
+    console.log('Handling task completion fallback', taskId, taskData);
+    
+    // Create delay to ensure server has processed task result
+    setTimeout(() => {
+        // Determine what to do based on current step
+        if (currentStep === 1) {
+            // For persona generation
+            fetchPersonaData();
+        }
+        else if (currentStep === 2 && personaDisplay.textContent.trim() !== 'No persona generated yet.') {
+            // If we have a persona but waiting for requirements
+            axios.get(`/get_requirements?conversation_id=${conversationId}`)
+                .then(response => {
+                    if (response.data.status === 'success' && response.data.requirements) {
+                        requirementsDisplay.innerHTML = `<pre>${response.data.requirements}</pre>`;
+                        addLogMessage('Successfully fetched requirements data via API', 'debug');
+                        
+                        // Move to next step
+                        generateInitialUserMessage(response.data.requirements);
+                    } else {
+                        // If requirements not found in session, use the persona to generate them
+                        const persona = personaDisplay.querySelector('pre').textContent;
+                        generateRequirements(persona);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching requirements:', error);
+                    
+                    // Fallback - use persona to generate requirements
+                    const persona = personaDisplay.querySelector('pre').textContent;
+                    generateRequirements(persona);
+                });
+        }
+        else if (currentStep === 3 && requirementsDisplay.textContent.trim() !== 'No requirements generated yet.') {
+            // If we have requirements but waiting for user message
+            axios.get(`/get_last_message?conversation_id=${conversationId}&type=user`)
+                .then(response => {
+                    if (response.data.status === 'success' && response.data.message) {
+                        addMessageToUI('user', response.data.message);
+                        addLogMessage('Successfully fetched user message via API', 'debug');
+                        
+                        // Process model response
+                        processModelResponse();
+                    } else {
+                        // If user message not found, generate it
+                        const requirements = requirementsDisplay.querySelector('pre').textContent;
+                        generateInitialUserMessage(requirements);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching user message:', error);
+                    
+                    // Fallback - generate user message
+                    const requirements = requirementsDisplay.querySelector('pre').textContent;
+                    generateInitialUserMessage(requirements);
+                });
+        }
+        else if (currentStep === 4) {
+            // For assistant response
+            axios.get(`/get_last_message?conversation_id=${conversationId}&type=assistant`)
+                .then(response => {
+                    if (response.data.status === 'success' && response.data.message) {
+                        addMessageToUI('assistant', response.data.message);
+                        addLogMessage('Successfully fetched assistant message via API', 'debug');
+                        
+                        // Move to next step
+                        setActiveStep(5);
+                        hideLoading();
+                    } else {
+                        // If assistant message not found, process response again
+                        processModelResponse();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching assistant message:', error);
+                    hideLoading();
+                });
+        }
+        else if (currentStep === 5) {
+            // For next user message
+            generateNextUserMessage();
+        }
+        else {
+            // General case - just hide loading
+            hideLoading();
+        }
+    }, 1000); // 1 second delay to ensure server has processed everything
+}
+// Store model response when WebSockets fail
+function storeModelResponse(model, response, step) {
+    console.log(`Storing ${model} response for step ${step}`);
+    
+    axios.post('/store_model_response', {
+        conversation_id: conversationId,
+        model: model,
+        response: response,
+        step: step
+    })
+        .then(response => {
+            console.log('Store model response result:', response.data);
+            addLogMessage(`Stored model response for step ${step}`, 'debug');
+        })
+        .catch(error => {
+            console.error('Error storing model response:', error);
+            addLogMessage(`Error storing model response: ${error.message}`, 'error');
+        });
+}
+
+// Function to fetch task result directly with improved handling for step 4
+function fetchDirectTaskResult(taskId) {
+    console.log(`Fetching direct result for task ${taskId}`);
+    addLogMessage(`Fetching direct result for task ${taskId}`, 'debug');
+    
+    axios.get(`/get_task_result/${taskId}`)
+        .then(response => {
+            console.log('Task result response:', response.data);
+            
+            if (response.data.status === 'success' && response.data.result) {
+                const result = response.data.result;
+                
+                // Determine what to do with the result based on current step
+                if (currentStep === 1) {
+                    // For persona generation (simple string result)
+                    personaDisplay.innerHTML = `<pre>${result}</pre>`;
+                    addLogMessage('Retrieved persona directly from task result', 'debug');
+                    
+                    // Move to next step
+                    generateRequirements(result);
+                }
+                else if (currentStep === 2) {
+                    // For requirements (simple string result)
+                    requirementsDisplay.innerHTML = `<pre>${result}</pre>`;
+                    addLogMessage('Retrieved requirements directly from task result', 'debug');
+                    
+                    // Move to next step
+                    generateInitialUserMessage(result);
+                }
+                else if (currentStep === 3 || currentStep === 5) {
+                    // For user message (simple string result)
+                    addMessageToUI('user', result);
+                    addLogMessage('Retrieved user message directly from task result', 'debug');
+                    
+                    // Process model response
+                    processModelResponse();
+                }
+                else if (currentStep === 4) {
+                    // For model response processing (complex object result)
+                    console.log('Processing model response result:', result);
+                    
+                    // Check if result has the expected format
+                    if (typeof result === 'object' && result.message && result.message.content) {
+                        // Add the assistant message to UI
+                        addMessageToUI('assistant', result.message.content);
+                        addLogMessage('Retrieved and displayed assistant message from task result', 'debug');
+                        
+                        // Update conversation in backend
+                        updateConversationInBackend(result);
+                        
+                        // Enable regenerate button
+                        regenerateBtn.disabled = false;
+                        
+                        // Move to next step
+                        setActiveStep(5);
+                        
+                        // Hide loading
+                        hideLoading();
+                    } else {
+                        console.error('Model response result has unexpected format:', result);
+                        addLogMessage('Model response result has unexpected format', 'error');
+                        hideLoading();
+                    }
+                }
+                else {
+                    // General case
+                    console.log('Unknown step for direct task result:', currentStep);
+                    addLogMessage(`Unknown step ${currentStep} for direct task result`, 'warning');
+                    hideLoading();
+                }
+            } else {
+                console.error('Failed to get task result or result is empty');
+                addLogMessage('Failed to get task result or result is empty', 'error');
+                hideLoading();
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching direct task result:', error);
+            addLogMessage(`Error fetching direct task result: ${error.message}`, 'error');
+            hideLoading();
+        });
+}
+
+// Enhanced fetchPersonaData function with direct task result fallback
+function fetchPersonaData() {
+    console.log('Fetching persona data via API');
+    
+    axios.get(`/get_persona?conversation_id=${conversationId}`)
+        .then(response => {
+            console.log('Persona API response:', response.data);
+            
+            if (response.data.status === 'success' && response.data.persona) {
+                personaDisplay.innerHTML = `<pre>${response.data.persona}</pre>`;
+                addLogMessage(`Successfully fetched persona data via API (source: ${response.data.source})`, 'debug');
+                
+                // Move to next step - Generate requirements
+                generateRequirements(response.data.persona);
+            } else {
+                // If not found in file or session, try direct task result
+                console.log('Persona not found in session or file, trying direct task result');
+                
+                if (currentTaskId) {
+                    fetchDirectTaskResult(currentTaskId);
+                } else {
+                    console.error('No task ID available');
+                    addLogMessage('No task ID available for direct result fetch', 'error');
+                    hideLoading();
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching persona:', error);
+            addLogMessage(`Error fetching persona: ${error.message}`, 'error');
+            
+            // Try direct task result as fallback
+            if (currentTaskId) {
+                fetchDirectTaskResult(currentTaskId);
+            } else {
+                hideLoading();
+            }
+        });
+}
+            
+            // Init conversation
+            function initConversation() {
+                showLoading('Initializing conversation...', 'Setting up workflow');
+                
+                axios.post('/init')
+                    .then(response => {
+                        conversationId = response.data.conversation_id;
+                        currentTaskId = response.data.task_id;
+                        
+                        addLogMessage(`Conversation initialized with ID: ${conversationId}`, 'debug');
+                        
+                        // Poll for task completion
+                        pollTaskCompletion(currentTaskId, 'Generating persona...');
+                    })
+                    .catch(error => {
+                        console.error('Error initializing conversation:', error);
+                        addLogMessage(`Error initializing conversation: ${error.message}`, 'error');
+                        hideLoading();
+                    });
+            }
+            
+            // Generate requirements based on persona
+            function generateRequirements(persona) {
+                showLoading('Generating requirements...', 'Based on persona');
+                
+                axios.post('/generate_requirements', {
+                    persona: persona,
+                    conversation_id: conversationId
+                })
+                    .then(response => {
+                        currentTaskId = response.data.task_id;
+                        
+                        // Update step
+                        setActiveStep(2);
+                        
+                        // Poll for task completion
+                        pollTaskCompletion(currentTaskId, 'Generating requirements...');
+                    })
+                    .catch(error => {
+                        console.error('Error generating requirements:', error);
+                        addLogMessage(`Error generating requirements: ${error.message}`, 'error');
+                        hideLoading();
+                    });
+            }
+            
+            // Generate initial user message
+            function generateInitialUserMessage(requirements) {
+                showLoading('Generating initial user message...', 'Based on persona and requirements');
+                
+                axios.post('/initial_user_message', {
+                    requirements: requirements,
+                    conversation_id: conversationId
+                })
+                    .then(response => {
+                        currentTaskId = response.data.task_id;
+                        
+                        // Update step
+                        setActiveStep(3);
+                        
+                        // Poll for task completion
+                        pollTaskCompletion(currentTaskId, 'Generating initial user message...');
+                    })
+                    .catch(error => {
+                        console.error('Error generating initial user message:', error);
+                        addLogMessage(`Error generating initial user message: ${error.message}`, 'error');
+                        hideLoading();
+                    });
+            }
+            
+            // Add user message to backend
+            function addUserMessageToBackend(message) {
+                axios.post('/add_user_message', {
+                    message: message,
+                    conversation_id: conversationId
+                })
+                    .then(() => {
+                        // Process model response
+                        processModelResponse();
+                    })
+                    .catch(error => {
+                        console.error('Error adding user message:', error);
+                        addLogMessage(`Error adding user message: ${error.message}`, 'error');
+                    });
+            }
+            
+            // Process model response
+            function processModelResponse() {
+                showLoading('Processing model response...', 'This may take a minute or two');
+                
+                // Update step
+                setActiveStep(4);
+                
+                axios.post('/process_model_response', {
+                    conversation_id: conversationId
+                })
+                    .then(response => {
+                        currentTaskId = response.data.task_id;
+                        
+                        // Poll for task completion
+                        pollTaskCompletion(currentTaskId, 'Processing model response...', 'This may take a minute or two');
+                    })
+                    .catch(error => {
+                        console.error('Error processing model response:', error);
+                        addLogMessage(`Error processing model response: ${error.message}`, 'error');
+                        hideLoading();
+                    });
+            }
+            
+            // Generate next user message
+            function generateNextUserMessage() {
+                showLoading('Generating next user message...', 'Based on conversation history');
+                
+                // Update step
+                setActiveStep(5);
+                
+                axios.post('/generate_next_user_message', {
+                    conversation_id: conversationId
+                })
+                    .then(response => {
+                        currentTaskId = response.data.task_id;
+                        
+                        // Poll for task completion
+                        pollTaskCompletion(currentTaskId, 'Generating next user message...');
+                    })
+                    .catch(error => {
+                        console.error('Error generating next user message:', error);
+                        addLogMessage(`Error generating next user message: ${error.message}`, 'error');
+                        hideLoading();
+                    });
+            }
+            
+            // Update conversation in backend
+            function updateConversationInBackend(result) {
+                axios.post('/update_conversation', {
+                    result: result
+                })
+                    .then(() => {
+                        addLogMessage('Conversation updated in backend', 'debug');
+                    })
+                    .catch(error => {
+                        console.error('Error updating conversation:', error);
+                        addLogMessage(`Error updating conversation: ${error.message}`, 'error');
+                    });
+            }
+            
+            // Save conversation
+            function saveConversation(name) {
+                showLoading('Saving conversation...', 'This will create JSON files');
+                
+                axios.post('/save_conversation', {
+                    name: name
+                })
+                    .then(response => {
+                        addLogMessage(`Conversation saved as: ${name}`, 'debug');
+                        hideLoading();
+                        
+                        // Update saved conversations list
+                        getSavedConversations();
+                    })
+                    .catch(error => {
+                        console.error('Error saving conversation:', error);
+                        addLogMessage(`Error saving conversation: ${error.message}`, 'error');
+                        hideLoading();
+                    });
+            }
+            
+            // Get saved conversations
+            function getSavedConversations() {
+                axios.get('/get_saved_conversations')
+                    .then(response => {
+                        const conversations = response.data.conversations;
+                        
+                        if (conversations.length === 0) {
+                            savedConversationsList.innerHTML = '<p class="text-muted">No conversations saved yet.</p>';
+                            return;
+                        }
+                        
+                        let html = '<ul class="list-group">';
+                        conversations.forEach(conv => {
+                            html += `
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>${conv.name}</strong>
+                                        <br>
+                                        <small class="text-muted">${conv.timestamp}</small>
+                                    </div>
+                                    <div>
+                                        <a href="${conv.readable_file}" class="btn btn-sm btn-outline-primary me-1" target="_blank">
+                                            View
+                                        </a>
+                                        <a href="${conv.detailed_file}" class="btn btn-sm btn-outline-secondary" download>
+                                            Download
+                                        </a>
+                                    </div>
+                                </li>
+                            `;
+                        });
+                        html += '</ul>';
+                        
+                        savedConversationsList.innerHTML = html;
+                    })
+                    .catch(error => {
+                        console.error('Error getting saved conversations:', error);
+                        addLogMessage(`Error getting saved conversations: ${error.message}`, 'error');
+                    });
+            }
+            
+            // Regenerate assistant response
+            function regenerateAssistantResponse() {
+                showLoading('Regenerating assistant response...', 'This may take a minute or two');
+                
+                axios.post('/regenerate_assistant_response', {
+                    conversation_id: conversationId
+                })
+                    .then(response => {
+                        currentTaskId = response.data.task_id;
+                        
+                        // Poll for task completion
+                        pollTaskCompletion(currentTaskId, 'Regenerating assistant response...', 'This may take a minute or two');
+                    })
+                    .catch(error => {
+                        console.error('Error regenerating assistant response:', error);
+                        addLogMessage(`Error regenerating assistant response: ${error.message}`, 'error');
+                        hideLoading();
+                    });
+            }
+            
+            // Clear conversation
+            function clearConversation() {
+                if (!confirm('Are you sure you want to clear the current conversation? This will keep the persona and requirements.')) {
+                    return;
+                }
+                
+                showLoading('Clearing conversation...', 'Keeping persona and requirements');
+                
+                axios.post('/clear_conversation')
+                    .then(() => {
+                        // Clear conversation UI
+                        conversationBox.querySelector('.message-container').innerHTML = '';
+                        
+                        // Clear data displays
+                        nerResults.innerHTML = '<span class="text-muted">No NER results available yet.</span>';
+                        searchCall.innerHTML = '<span class="text-muted">No search call available yet.</span>';
+                        searchResults.innerHTML = '<span class="text-muted">No search results available yet.</span>';
+                        critique.innerHTML = '<span class="text-muted">No critique available yet.</span>';
+                        
+                        // Set step back to 3
+                        setActiveStep(3);
+                        
+                        hideLoading();
+                        addLogMessage('Conversation cleared', 'debug');
+                        
+                        // Generate initial user message again
+                        generateInitialUserMessage(requirementsDisplay.querySelector('pre').textContent);
+                    })
+                    .catch(error => {
+                        console.error('Error clearing conversation:', error);
+                        addLogMessage(`Error clearing conversation: ${error.message}`, 'error');
+                        hideLoading();
+                    });
+            }
+            
+            // Reset everything
+            function resetEverything() {
+                if (!confirm('Are you sure you want to reset everything? This will start from scratch.')) {
+                    return;
+                }
+                
+                showLoading('Resetting...', 'Starting from scratch');
+                
+                axios.post('/reset')
+                    .then(() => {
+                        // Clear all UI elements
+                        conversationBox.querySelector('.message-container').innerHTML = '';
+                        personaDisplay.innerHTML = '<span class="text-muted">No persona generated yet.</span>';
+                        requirementsDisplay.innerHTML = '<span class="text-muted">No requirements generated yet.</span>';
+                        nerResults.innerHTML = '<span class="text-muted">No NER results available yet.</span>';
+                        searchCall.innerHTML = '<span class="text-muted">No search call available yet.</span>';
+                        searchResults.innerHTML = '<span class="text-muted">No search results available yet.</span>';
+                        critique.innerHTML = '<span class="text-muted">No critique available yet.</span>';
+                        
+                        // Reset step
+                        setActiveStep(1);
+                        
+                        // Reset conversation ID
+                        conversationId = null;
+                        
+                        // Disable buttons
+                        nextBtn.disabled = true;
+                        clearBtn.disabled = true;
+                        regenerateBtn.disabled = true;
+                        saveConversationBtn.disabled = true;
+                        
+                        hideLoading();
+                        addLogMessage('Everything reset', 'debug');
+                    })
+                    .catch(error => {
+                        console.error('Error resetting:', error);
+                        addLogMessage(`Error resetting: ${error.message}`, 'error');
+                        hideLoading();
+                    });
+            }
+            
+            // Button event listeners
+            startBtn.addEventListener('click', () => {
+                initConversation();
+            });
+            
+            nextBtn.addEventListener('click', () => {
+                if (currentStep === 5) {
+                    // If we're at step 5, generate next user message and go back to step 4
+                    generateNextUserMessage();
+                }
+            });
+            
+            clearBtn.addEventListener('click', () => {
+                clearConversation();
+            });
+            
+            resetBtn.addEventListener('click', () => {
+                resetEverything();
+            });
+            
+            regenerateBtn.addEventListener('click', () => {
+                regenerateAssistantResponse();
+            });
+            
+            saveConversationBtn.addEventListener('click', () => {
+                saveConversationModal.show();
+            });
+            
+            saveConversationModalBtn.addEventListener('click', () => {
+                const name = document.getElementById('conversationName').value || `Conversation-${new Date().toISOString().slice(0, 19).replace('T', '-').replace(/:/g, '')}`;
+                saveConversation(name);
+                saveConversationModal.hide();
+            });
+            
+            // Initialize
+            getSavedConversations();
+        });
+    </script>
+</body>
+</html>

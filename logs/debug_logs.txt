@@ -1,0 +1,286 @@
+[2025-03-16 23:10:08] DEBUG: Client connected
+
+[2025-03-16 23:12:44] DEBUG: Client connected
+
+[2025-03-16 23:24:26] DEBUG: Client connected
+
+[2025-03-16 23:24:34] DEBUG: Emitted model_response event for o3-mini with conversation_id 80850f0d-00a7-4bbb-bffc-532061e31521
+
+[2025-03-16 23:25:04] DEBUG: Emitted model_response event for o3-mini with conversation_id f191a554-7a94-4d47-890c-c4c1b1e63f75
+
+[2025-03-16 23:25:44] DEBUG: Client connected
+
+[2025-03-16 23:26:15] DEBUG: Emitted model_response event for o3-mini with conversation_id d921dc46-3b18-4d1e-80f8-c74a187798f1
+
+[2025-03-16 23:29:54] DEBUG: Client connected
+
+[2025-03-16 23:30:02] DEBUG: Emitted model_response event for o3-mini with conversation_id 03f8eed7-7b7d-4c9d-b7d9-e30b750d0d1d
+
+[2025-03-16 23:32:11] DEBUG: Client connected
+
+[2025-03-16 23:32:33] DEBUG: Client connected
+
+[2025-03-16 23:36:24] DEBUG: Emitted model_response event for o3-mini with conversation_id 65fe59ee-da75-4336-b59b-c08986fed834
+
+[2025-03-16 23:36:28] DEBUG: Session data: {"conversation": [], "conversation_id": "65fe59ee-da75-4336-b59b-c08986fed834", "persona": null, "previous_data": {"num_matches": 100, "preferences": {}}, "random_number": 80, "requirements": null, "saved_conversations": []}
+
+[2025-03-16 23:36:28] DEBUG: No persona in session data
+
+[2025-03-16 23:45:43] DEBUG: Client connected
+
+[2025-03-16 23:45:51] DEBUG: Emitted model_response event for o3-mini with conversation_id 03397ffc-d12d-4313-8401-88702a1928ba
+
+[2025-03-16 23:48:26] DEBUG: Emitted model_response event for o3-mini with conversation_id 31837771-35dc-4f95-87d3-995048d12e9a
+
+[2025-03-16 23:48:42] DEBUG: Emitted model_response event for o3-mini with conversation_id 31837771-35dc-4f95-87d3-995048d12e9a
+
+[2025-03-16 23:48:47] DEBUG: Emitted model_response event for o3-mini with conversation_id 31837771-35dc-4f95-87d3-995048d12e9a
+
+[2025-03-16 23:48:49] DEBUG: Processing CLAUDE response...
+
+[2025-03-16 23:48:49] DEBUG: NER extraction - processing conversation with 0 messages
+
+[2025-03-16 23:48:53] DEBUG: NER extraction response preview: ```python
+{}
+```...
+
+[2025-03-16 23:48:53] DEBUG: Extracted preferences: {}
+
+[2025-03-16 23:48:53] DEBUG: claude: Extracted preferences: {}
+
+[2025-03-16 23:48:53] DEBUG: claude: Preferences changed: False
+
+[2025-03-16 23:48:53] DEBUG: claude: Previous search had many results (> 10): True
+
+[2025-03-16 23:48:53] DEBUG: claude: Previous search matches: 100
+
+[2025-03-16 23:48:53] DEBUG: claude: Previous preferences: {}
+
+[2025-03-16 23:48:53] DEBUG: claude: New preferences: {}
+
+[2025-03-16 23:48:53] DEBUG: claude: Search triggered because previous results > 10
+
+[2025-03-16 23:48:53] DEBUG: Process search call - preferences empty, search might still be needed
+
+[2025-03-16 23:48:55] DEBUG: Search call response preview: NO_SEARCH_NEEDED...
+
+[2025-03-16 23:48:55] DEBUG: No function call found in search call response
+
+[2025-03-16 23:48:55] DEBUG: claude: Search call result length: 0
+
+[2025-03-16 23:48:55] DEBUG: claude: Using previous num_matches: 100 (no new search)
+
+[2025-03-16 23:48:57] DEBUG: Extract function calls - Input length: 266
+
+[2025-03-16 23:48:57] DEBUG: Extract function calls - Found 0 function calls
+
+[2025-03-16 23:48:57] DEBUG: Combined critique: {"together": null}
+
+[2025-03-16 23:51:05] DEBUG: Client connected
+
+[2025-03-16 23:51:11] DEBUG: Emitted model_response event for o3-mini with conversation_id 410f93a1-c726-43be-8fbb-ded3a7213dea
+
+[2025-03-16 23:51:22] DEBUG: Emitted model_response event for o3-mini with conversation_id 410f93a1-c726-43be-8fbb-ded3a7213dea
+
+[2025-03-16 23:51:28] DEBUG: Emitted model_response event for o3-mini with conversation_id 410f93a1-c726-43be-8fbb-ded3a7213dea
+
+[2025-03-16 23:51:30] DEBUG: Processing CLAUDE response...
+
+[2025-03-16 23:51:30] DEBUG: NER extraction - processing conversation with 0 messages
+
+[2025-03-16 23:51:33] DEBUG: NER extraction response preview: ```python
+{}
+```...
+
+[2025-03-16 23:51:33] DEBUG: Extracted preferences: {}
+
+[2025-03-16 23:51:33] DEBUG: claude: Extracted preferences: {}
+
+[2025-03-16 23:51:33] DEBUG: claude: Preferences changed: False
+
+[2025-03-16 23:51:33] DEBUG: claude: Previous search had many results (> 10): True
+
+[2025-03-16 23:51:33] DEBUG: claude: Previous search matches: 100
+
+[2025-03-16 23:51:33] DEBUG: claude: Previous preferences: {}
+
+[2025-03-16 23:51:33] DEBUG: claude: New preferences: {}
+
+[2025-03-16 23:51:33] DEBUG: claude: Search triggered because previous results > 10
+
+[2025-03-16 23:51:33] DEBUG: Process search call - preferences empty, search might still be needed
+
+[2025-03-16 23:51:35] DEBUG: Search call response preview: NO_SEARCH_NEEDED...
+
+[2025-03-16 23:51:35] DEBUG: No function call found in search call response
+
+[2025-03-16 23:51:35] DEBUG: claude: Search call result length: 0
+
+[2025-03-16 23:51:35] DEBUG: claude: Using previous num_matches: 100 (no new search)
+
+[2025-03-16 23:51:37] DEBUG: Extract function calls - Input length: 174
+
+[2025-03-16 23:51:37] DEBUG: Extract function calls - Found 0 function calls
+
+[2025-03-16 23:51:37] DEBUG: Combined critique: {"together": null}
+
+[2025-03-16 23:52:25] DEBUG: Client disconnected
+
+[2025-03-16 23:54:10] DEBUG: Client connected
+
+[2025-03-16 23:55:11] DEBUG: Emitted model_response event for o3-mini with conversation_id b98c36e8-237e-46da-a467-71944ad36ac2
+
+[2025-03-16 23:55:27] DEBUG: Emitted model_response event for o3-mini with conversation_id b98c36e8-237e-46da-a467-71944ad36ac2
+
+[2025-03-16 23:55:34] DEBUG: Emitted model_response event for o3-mini with conversation_id b98c36e8-237e-46da-a467-71944ad36ac2
+
+[2025-03-16 23:55:37] DEBUG: Processing CLAUDE response...
+
+[2025-03-16 23:55:37] DEBUG: Simple conversation has 0 messages
+
+[2025-03-16 23:55:37] DEBUG: NER extraction - processing conversation with 0 messages
+
+[2025-03-16 23:55:39] DEBUG: NER extraction response preview: ```python
+{}
+```...
+
+[2025-03-16 23:55:39] DEBUG: Extracted preferences: {}
+
+[2025-03-16 23:55:39] DEBUG: claude: Extracted preferences: {}
+
+[2025-03-16 23:55:39] DEBUG: claude: Preferences changed: False
+
+[2025-03-16 23:55:39] DEBUG: claude: Previous search had many results (> 10): True
+
+[2025-03-16 23:55:39] DEBUG: claude: Previous search matches: 100
+
+[2025-03-16 23:55:39] DEBUG: claude: Previous preferences: {}
+
+[2025-03-16 23:55:39] DEBUG: claude: New preferences: {}
+
+[2025-03-16 23:55:39] DEBUG: claude: Search triggered because previous results > 10
+
+[2025-03-16 23:55:39] DEBUG: Process search call - preferences empty, search might still be needed
+
+[2025-03-16 23:55:41] DEBUG: Search call response preview: NO_SEARCH_NEEDED...
+
+[2025-03-16 23:55:41] DEBUG: No function call found in search call response
+
+[2025-03-16 23:55:41] DEBUG: claude: Search call result length: 0
+
+[2025-03-16 23:55:41] DEBUG: claude: Using previous num_matches: 100 (no new search)
+
+[2025-03-16 23:55:44] DEBUG: Extract function calls - Input length: 139
+
+[2025-03-16 23:55:44] DEBUG: Extract function calls - Found 0 function calls
+
+[2025-03-16 23:55:44] DEBUG: Combined critique: {"together": null}
+
+[2025-03-16 23:55:44] DEBUG: claude: Together critique score: N/A
+
+[2025-03-16 23:55:44] DEBUG: Assistant (claude): I'm here to help you find and book the perfect hotel for your trip! Where are you planning to stay, ...
+
+[2025-03-17 00:00:01] DEBUG: Client connected
+
+[2025-03-17 00:00:14] DEBUG: Emitted model_response event for o3-mini with conversation_id f13e3f92-489c-48b7-aa12-983c8935f4b0
+
+[2025-03-17 00:00:38] DEBUG: Emitted model_response event for o3-mini with conversation_id f13e3f92-489c-48b7-aa12-983c8935f4b0
+
+[2025-03-17 00:00:44] DEBUG: Emitted model_response event for o3-mini with conversation_id f13e3f92-489c-48b7-aa12-983c8935f4b0
+
+[2025-03-17 00:00:46] DEBUG: Processing CLAUDE response...
+
+[2025-03-17 00:00:46] DEBUG: Simple conversation has 0 messages
+
+[2025-03-17 00:00:46] DEBUG: NER extraction - processing conversation with 0 messages
+
+[2025-03-17 00:00:49] DEBUG: NER extraction response preview: ```python
+{}
+```...
+
+[2025-03-17 00:00:49] DEBUG: Extracted preferences: {}
+
+[2025-03-17 00:00:49] DEBUG: claude: Extracted preferences: {}
+
+[2025-03-17 00:00:49] DEBUG: claude: Preferences changed: False
+
+[2025-03-17 00:00:49] DEBUG: claude: Previous search had many results (> 10): True
+
+[2025-03-17 00:00:49] DEBUG: claude: Previous search matches: 100
+
+[2025-03-17 00:00:49] DEBUG: claude: Previous preferences: {}
+
+[2025-03-17 00:00:49] DEBUG: claude: New preferences: {}
+
+[2025-03-17 00:00:49] DEBUG: claude: Search triggered because previous results > 10
+
+[2025-03-17 00:00:49] DEBUG: Process search call - preferences empty, search might still be needed
+
+[2025-03-17 00:00:53] DEBUG: Search call response preview: NO_SEARCH_NEEDED...
+
+[2025-03-17 00:00:53] DEBUG: No function call found in search call response
+
+[2025-03-17 00:00:53] DEBUG: claude: Search call result length: 0
+
+[2025-03-17 00:00:53] DEBUG: claude: Using previous num_matches: 100 (no new search)
+
+[2025-03-17 00:00:55] DEBUG: Extract function calls - Input length: 122
+
+[2025-03-17 00:00:55] DEBUG: Extract function calls - Found 0 function calls
+
+[2025-03-17 00:00:55] DEBUG: Combined critique: {"together": null}
+
+[2025-03-17 00:00:55] DEBUG: claude: Together critique score: N/A
+
+[2025-03-17 00:00:55] DEBUG: Assistant (claude): I'm here to help you find the perfect hotel for your trip! Where are you planning to stay, and when ...
+
+[2025-03-17 00:01:21] DEBUG: Emitted model_response event for o3-mini with conversation_id f13e3f92-489c-48b7-aa12-983c8935f4b0
+
+[2025-03-17 00:01:25] DEBUG: Processing CLAUDE response...
+
+[2025-03-17 00:01:25] DEBUG: Simple conversation has 1 messages
+
+[2025-03-17 00:01:25] DEBUG: NER extraction - processing conversation with 1 messages
+
+[2025-03-17 00:01:30] DEBUG: NER extraction response preview: ```python
+{}
+```...
+
+[2025-03-17 00:01:30] DEBUG: Extracted preferences: {}
+
+[2025-03-17 00:01:30] DEBUG: claude: Extracted preferences: {}
+
+[2025-03-17 00:01:30] DEBUG: claude: Preferences changed: False
+
+[2025-03-17 00:01:30] DEBUG: claude: Previous search had many results (> 10): True
+
+[2025-03-17 00:01:30] DEBUG: claude: Previous search matches: 100
+
+[2025-03-17 00:01:30] DEBUG: claude: Previous preferences: {}
+
+[2025-03-17 00:01:30] DEBUG: claude: New preferences: {}
+
+[2025-03-17 00:01:30] DEBUG: claude: Search triggered because previous results > 10
+
+[2025-03-17 00:01:30] DEBUG: Process search call - preferences empty, search might still be needed
+
+[2025-03-17 00:01:34] DEBUG: Search call response preview: NO_SEARCH_NEEDED...
+
+[2025-03-17 00:01:34] DEBUG: No function call found in search call response
+
+[2025-03-17 00:01:34] DEBUG: claude: Search call result length: 0
+
+[2025-03-17 00:01:34] DEBUG: claude: Using previous num_matches: 100 (no new search)
+
+[2025-03-17 00:01:36] DEBUG: Extract function calls - Input length: 122
+
+[2025-03-17 00:01:36] DEBUG: Extract function calls - Found 0 function calls
+
+[2025-03-17 00:01:36] DEBUG: Combined critique: {"together": null}
+
+[2025-03-17 00:01:36] DEBUG: claude: Together critique score: N/A
+
+[2025-03-17 00:01:36] DEBUG: Assistant (claude): I'm here to help you find the perfect hotel for your trip! Where are you planning to stay, and when ...
+
+[2025-03-17 00:06:47] DEBUG: Client disconnected
+
